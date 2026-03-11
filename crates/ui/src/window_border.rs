@@ -1,9 +1,10 @@
 // From:
 // https://github.com/zed-industries/zed/blob/56daba28d40301ee4c05546fadb691d070b7b2b6/crates/gpui/examples/window_shadow.rs
 use gpui::{
-    AnyElement, App, Bounds, CursorStyle, Decorations, Edges, HitboxBehavior, Hsla,
+    AnyElement, App, Bounds, CursorStyle, Decorations, Edges, Hitbox, HitboxBehavior, Hsla,
     InteractiveElement as _, IntoElement, MouseButton, ParentElement, Pixels, Point, RenderOnce,
-    ResizeEdge, Size, Styled as _, Window, canvas, div, point, prelude::FluentBuilder as _, px,
+    ResizeEdge, Size, Styled as _, Tiling, Window, canvas, div, point, prelude::FluentBuilder as _,
+    px,
 };
 
 use crate::ActiveTheme;
@@ -102,29 +103,18 @@ impl RenderOnce for WindowBorder {
                     .bg(gpui::transparent_black())
                     .child(
                         canvas(
-                            |_bounds, window, _| {
-                                window.insert_hitbox(
-                                    Bounds::new(
-                                        point(px(0.0), px(0.0)),
-                                        window.window_bounds().get_bounds().size,
-                                    ),
-                                    HitboxBehavior::Normal,
-                                )
+                            move |_bounds, window, _| {
+                                let win_size = window.window_bounds().get_bounds().size;
+                                let Decorations::Client { tiling } =
+                                    window.window_decorations()
+                                else {
+                                    return Vec::new();
+                                };
+                                resize_edge_hitboxes(shadow_size, win_size, tiling, window)
                             },
-                            move |_bounds, hitbox, window, _| {
-                                let mouse = window.mouse_position();
-                                let size = window.window_bounds().get_bounds().size;
-                                let Decorations::Client { tiling } = window.window_decorations() else {
-                                    return;
-                                };
-                                if tiling.top && tiling.bottom && tiling.left && tiling.right {
-                                    return;
-                                }
-                                let Some(edge) = resize_edge(mouse, shadow_size, size) else {
-                                    return;
-                                };
-                                window.set_cursor_style(
-                                    match edge {
+                            move |_bounds, edge_hitboxes: Vec<(ResizeEdge, Hitbox)>, window, _| {
+                                for (edge, hitbox) in &edge_hitboxes {
+                                    let cursor = match edge {
                                         ResizeEdge::Top | ResizeEdge::Bottom => {
                                             CursorStyle::ResizeUpDown
                                         }
@@ -137,9 +127,9 @@ impl RenderOnce for WindowBorder {
                                         ResizeEdge::TopRight | ResizeEdge::BottomLeft => {
                                             CursorStyle::ResizeUpRightDownLeft
                                         }
-                                    },
-                                    &hitbox,
-                                );
+                                    };
+                                    window.set_cursor_style(cursor, hitbox);
+                                }
                             },
                         )
                         .size_full()
@@ -211,6 +201,64 @@ impl RenderOnce for WindowBorder {
                     .children(self.children),
             )
     }
+}
+
+fn resize_edge_hitboxes(
+    s: Pixels,
+    win: Size<Pixels>,
+    tiling: Tiling,
+    window: &mut Window,
+) -> Vec<(ResizeEdge, Hitbox)> {
+    let mut edges = Vec::new();
+    let w = win.width;
+    let h = win.height;
+
+    let sz = |width, height| Size { width, height };
+
+    let mut add = |edge: ResizeEdge, origin: Point<Pixels>, s: Size<Pixels>| {
+        if s.width > px(0.0) && s.height > px(0.0) {
+            let hitbox = window.insert_hitbox(Bounds::new(origin, s), HitboxBehavior::Normal);
+            edges.push((edge, hitbox));
+        }
+    };
+
+    // Corners
+    if !tiling.top && !tiling.left {
+        add(ResizeEdge::TopLeft, point(px(0.0), px(0.0)), sz(s, s));
+    }
+    if !tiling.top && !tiling.right {
+        add(ResizeEdge::TopRight, point(w - s, px(0.0)), sz(s, s));
+    }
+    if !tiling.bottom && !tiling.left {
+        add(ResizeEdge::BottomLeft, point(px(0.0), h - s), sz(s, s));
+    }
+    if !tiling.bottom && !tiling.right {
+        add(ResizeEdge::BottomRight, point(w - s, h - s), sz(s, s));
+    }
+
+    // Edges (between corners)
+    if !tiling.top {
+        let left = if tiling.left { px(0.0) } else { s };
+        let right = if tiling.right { w } else { w - s };
+        add(ResizeEdge::Top, point(left, px(0.0)), sz(right - left, s));
+    }
+    if !tiling.bottom {
+        let left = if tiling.left { px(0.0) } else { s };
+        let right = if tiling.right { w } else { w - s };
+        add(ResizeEdge::Bottom, point(left, h - s), sz(right - left, s));
+    }
+    if !tiling.left {
+        let top = if tiling.top { px(0.0) } else { s };
+        let bottom = if tiling.bottom { h } else { h - s };
+        add(ResizeEdge::Left, point(px(0.0), top), sz(s, bottom - top));
+    }
+    if !tiling.right {
+        let top = if tiling.top { px(0.0) } else { s };
+        let bottom = if tiling.bottom { h } else { h - s };
+        add(ResizeEdge::Right, point(w - s, top), sz(s, bottom - top));
+    }
+
+    edges
 }
 
 fn resize_edge(pos: Point<Pixels>, shadow_size: Pixels, size: Size<Pixels>) -> Option<ResizeEdge> {
