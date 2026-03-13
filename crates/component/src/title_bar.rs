@@ -43,6 +43,7 @@ pub struct TitleBar {
     style: StyleRefinement,
     children: SmallVec<[AnyElement; 1]>,
     on_close_window: Option<Rc<Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>>>,
+    neutral_close_button: bool,
 }
 
 impl TitleBar {
@@ -52,6 +53,7 @@ impl TitleBar {
             style: StyleRefinement::default(),
             children: SmallVec::new(),
             on_close_window: None,
+            neutral_close_button: false,
         }
     }
 
@@ -92,6 +94,13 @@ impl TitleBar {
 
     /// Add custom for close window event, default is None, then click X button will call `window.remove_window()`.
     /// Linux only, this will do nothing on other platforms.
+    /// Use neutral (non-red) hover colors on the close button, matching
+    /// the style of the minimize and maximize buttons.
+    pub fn neutral_close_button(mut self) -> Self {
+        self.neutral_close_button = true;
+        self
+    }
+
     pub fn on_close_window(
         mut self,
         f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -114,6 +123,7 @@ enum ControlIcon {
     Maximize,
     Close {
         on_close_window: Option<Rc<Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>>>,
+        neutral: bool,
     },
 }
 
@@ -130,8 +140,14 @@ impl ControlIcon {
         Self::Maximize
     }
 
-    fn close(on_close_window: Option<Rc<Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>>>) -> Self {
-        Self::Close { on_close_window }
+    fn close(
+        on_close_window: Option<Rc<Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>>>,
+        neutral: bool,
+    ) -> Self {
+        Self::Close {
+            on_close_window,
+            neutral,
+        }
     }
 
     fn id(&self) -> &'static str {
@@ -160,13 +176,13 @@ impl ControlIcon {
         }
     }
 
-    fn is_close(&self) -> bool {
-        matches!(self, Self::Close { .. })
+    fn is_danger_close(&self) -> bool {
+        matches!(self, Self::Close { neutral: false, .. })
     }
 
     #[inline]
     fn hover_fg(&self, cx: &App) -> Hsla {
-        if self.is_close() {
+        if self.is_danger_close() {
             cx.theme().danger_foreground
         } else {
             cx.theme().secondary_foreground
@@ -175,7 +191,7 @@ impl ControlIcon {
 
     #[inline]
     fn hover_bg(&self, cx: &App) -> Hsla {
-        if self.is_close() {
+        if self.is_danger_close() {
             cx.theme().danger
         } else {
             cx.theme().secondary_hover
@@ -184,7 +200,7 @@ impl ControlIcon {
 
     #[inline]
     fn active_bg(&self, cx: &mut App) -> Hsla {
-        if self.is_close() {
+        if self.is_danger_close() {
             cx.theme().danger_active
         } else {
             cx.theme().secondary_active
@@ -201,7 +217,7 @@ impl RenderOnce for ControlIcon {
         let active_bg = self.active_bg(cx);
         let icon = self.clone();
         let on_close_window = match &self {
-            ControlIcon::Close { on_close_window } => on_close_window.clone(),
+            ControlIcon::Close { on_close_window, .. } => on_close_window.clone(),
             _ => None,
         };
 
@@ -247,6 +263,7 @@ impl RenderOnce for ControlIcon {
 #[derive(IntoElement)]
 struct WindowControls {
     on_close_window: Option<Rc<Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>>>,
+    neutral_close_button: bool,
 }
 
 impl RenderOnce for WindowControls {
@@ -289,7 +306,7 @@ impl RenderOnce for WindowControls {
                     ControlIcon::maximize()
                 })
             })
-            .child(ControlIcon::close(self.on_close_window))
+            .child(ControlIcon::close(self.on_close_window, self.neutral_close_button))
     }
 }
 
@@ -399,6 +416,7 @@ impl RenderOnce for TitleBar {
                 )
                 .child(WindowControls {
                     on_close_window: self.on_close_window,
+                    neutral_close_button: self.neutral_close_button,
                 }),
         )
     }
