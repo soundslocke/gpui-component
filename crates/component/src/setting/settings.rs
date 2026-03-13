@@ -36,6 +36,7 @@ pub struct Settings {
     pages: Vec<SettingPage>,
     group_variant: GroupBoxVariant,
     size: Size,
+    sidebar_visible: bool,
     sidebar_width: Pixels,
     sidebar_size_range: Range<Pixels>,
     sidebar_style: StyleRefinement,
@@ -51,6 +52,7 @@ impl Settings {
             pages: vec![],
             group_variant: GroupBoxVariant::default(),
             size: Size::default(),
+            sidebar_visible: true,
             sidebar_width: px(250.0),
             sidebar_size_range: px(160.0)..px(360.0),
             sidebar_style: StyleRefinement::default(),
@@ -68,6 +70,14 @@ impl Settings {
     /// Set the resize range of the sidebar, default is `160px..360px`.
     pub fn sidebar_size_range(mut self, range: impl Into<Range<Pixels>>) -> Self {
         self.sidebar_size_range = range.into();
+        self
+    }
+
+    /// Set whether the sidebar is visible, default is `true`.
+    ///
+    /// When hidden, the full width is used for the active settings page.
+    pub fn sidebar_visible(mut self, visible: bool) -> Self {
+        self.sidebar_visible = visible;
         self
     }
 
@@ -387,22 +397,38 @@ impl RenderOnce for Settings {
             .render_sidebar(&state, &filtered_pages, window, cx)
             .into_any_element();
 
-        h_resizable(self.id.clone())
-            .child(
-                resizable_panel()
-                    .size(self.sidebar_width)
-                    .size_range(sidebar_size_range)
-                    .child(sidebar),
-            )
-            .child(
-                resizable_panel().child(container_query(move |size, window, cx| {
+        if self.sidebar_visible {
+            h_resizable(self.id.clone())
+                .child(
+                    resizable_panel()
+                        .size(self.sidebar_width)
+                        .size_range(sidebar_size_range)
+                        .child(sidebar),
+                )
+                .child(
+                    resizable_panel().child(container_query(move |size, window, cx| {
+                        let options =
+                            options.with_layout(if size.width <= STACKED_LAYOUT_MAX_WIDTH {
+                                Axis::Vertical
+                            } else {
+                                Axis::Horizontal
+                            });
+                        self.render_active_page(&state, &filtered_pages, &options, window, cx)
+                    })),
+                )
+                .into_any_element()
+        } else {
+            div()
+                .size_full()
+                .child(container_query(move |size, window, cx| {
                     let options = options.with_layout(if size.width <= STACKED_LAYOUT_MAX_WIDTH {
                         Axis::Vertical
                     } else {
                         Axis::Horizontal
                     });
                     self.render_active_page(&state, &filtered_pages, &options, window, cx)
-                })),
-            )
+                }))
+                .into_any_element()
+        }
     }
 }
