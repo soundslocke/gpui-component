@@ -30,6 +30,7 @@ pub struct Settings {
     pages: Vec<SettingPage>,
     group_variant: GroupBoxVariant,
     size: Size,
+    sidebar_visible: bool,
     sidebar_width: Pixels,
     sidebar_style: StyleRefinement,
     default_selected_index: SelectIndex,
@@ -44,6 +45,7 @@ impl Settings {
             pages: vec![],
             group_variant: GroupBoxVariant::default(),
             size: Size::default(),
+            sidebar_visible: true,
             sidebar_width: px(250.0),
             sidebar_style: StyleRefinement::default(),
             default_selected_index: SelectIndex::default(),
@@ -54,6 +56,14 @@ impl Settings {
     /// Set the width of the sidebar, default is `250px`.
     pub fn sidebar_width(mut self, width: impl Into<Pixels>) -> Self {
         self.sidebar_width = width.into();
+        self
+    }
+
+    /// Set whether the sidebar is visible, default is `true`.
+    ///
+    /// When hidden, the full width is used for the active settings page.
+    pub fn sidebar_visible(mut self, visible: bool) -> Self {
+        self.sidebar_visible = visible;
         self
     }
 
@@ -279,18 +289,32 @@ impl RenderOnce for Settings {
             layout: Axis::Horizontal,
         };
 
-        h_resizable(self.id.clone())
-            .child(
-                resizable_panel()
-                    .size(self.sidebar_width)
-                    .child(self.render_sidebar(&state, &filtered_pages, window, cx)),
-            )
-            .child(resizable_panel().child(self.render_active_page(
-                &state,
-                &filtered_pages,
-                &options,
-                window,
-                cx,
-            )))
+        if self.sidebar_visible {
+            h_resizable(self.id.clone())
+                .child(
+                    resizable_panel()
+                        .size(self.sidebar_width)
+                        .child(self.render_sidebar(&state, &filtered_pages, window, cx)),
+                )
+                .child(resizable_panel().child(self.render_active_page(
+                    &state,
+                    &filtered_pages,
+                    &options,
+                    window,
+                    cx,
+                )))
+                .into_any_element()
+        } else {
+            div()
+                .size_full()
+                .child(self.render_active_page(
+                    &state,
+                    &filtered_pages,
+                    &options,
+                    window,
+                    cx,
+                ))
+                .into_any_element()
+        }
     }
 }
