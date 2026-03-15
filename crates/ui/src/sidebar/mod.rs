@@ -245,7 +245,6 @@ impl<E: SidebarItem> RenderOnce for Sidebar<E> {
                             list(list_state.clone(), {
                                 move |ix, window, cx| {
                                     let group = self.content.get(ix).cloned();
-                                    let is_first = ix == 0;
                                     let is_last =
                                         content_len > 0 && ix == content_len.saturating_sub(1);
                                     div()
@@ -258,7 +257,7 @@ impl<E: SidebarItem> RenderOnce for Sidebar<E> {
                                                     .into_any_element(),
                                             )
                                         })
-                                        .when(is_first, |this| this.pt_3())
+                                        .pt_3()
                                         .when(is_last, |this| this.pb_3())
                                         .into_any_element()
                                 }
