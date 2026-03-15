@@ -269,11 +269,12 @@ impl<E: SidebarItem> RenderOnce for Sidebar<E> {
             )
             .when_some(self.footer.take(), |this, footer| {
                 this.child(
-                    h_flex()
+                    div()
                         .id("footer")
                         .pb_3()
                         .px_3()
                         .gap_2()
+                        .w_full()
                         .when(self.collapsed, |this| this.pt_2().px_2())
                         .child(footer),
                 )
