@@ -1,6 +1,8 @@
+use std::rc::Rc;
+
 use crate::{ActiveTheme, Collapsible, h_flex, sidebar::SidebarItem, v_flex};
 use gpui::{
-    App, ElementId, IntoElement, ParentElement, SharedString, Styled as _, Window, div,
+    AnyElement, App, ElementId, IntoElement, ParentElement, SharedString, Styled as _, Window, div,
     prelude::FluentBuilder as _, px,
 };
 
@@ -12,6 +14,7 @@ pub struct SidebarGroup<E: SidebarItem + 'static> {
     bottom_border: bool,
     collapsed: bool,
     children: Vec<E>,
+    suffix: Option<Rc<dyn Fn(&mut Window, &mut App) -> AnyElement + 'static>>,
 }
 
 impl<E: SidebarItem> SidebarGroup<E> {
@@ -23,6 +26,7 @@ impl<E: SidebarItem> SidebarGroup<E> {
             bottom_border: false,
             collapsed: false,
             children: Vec::new(),
+            suffix: None,
         }
     }
 
@@ -35,6 +39,18 @@ impl<E: SidebarItem> SidebarGroup<E> {
     /// Add a 1px bottom border below the group label.
     pub fn label_border(mut self, border: bool) -> Self {
         self.bottom_border = border;
+        self
+    }
+
+    /// Set a suffix element rendered at the right edge of the group heading.
+    pub fn suffix<F, El>(mut self, builder: F) -> Self
+    where
+        F: Fn(&mut Window, &mut App) -> El + 'static,
+        El: IntoElement,
+    {
+        self.suffix = Some(Rc::new(move |window, cx| {
+            builder(window, cx).into_any_element()
+        }));
         self
     }
 
@@ -74,6 +90,7 @@ impl<E: SidebarItem> SidebarItem for SidebarGroup<E> {
         let id = id.into();
 
         let bottom_border = self.bottom_border;
+        let suffix = self.suffix;
         let label: SharedString = if self.uppercase {
             self.label.to_uppercase().into()
         } else {
@@ -91,7 +108,11 @@ impl<E: SidebarItem> SidebarItem for SidebarGroup<E> {
                         .text_xs()
                         .text_color(cx.theme().sidebar_foreground.opacity(0.5))
                         .h_8()
-                        .child(label)
+                        .items_center()
+                        .child(div().flex_1().child(label))
+                        .when_some(suffix, |this, suffix| {
+                            this.child(suffix(window, cx))
+                        })
                         .when(bottom_border, |this| {
                             this.border_b_1()
                                 .border_color(cx.theme().sidebar_border)
