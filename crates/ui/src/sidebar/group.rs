@@ -1,13 +1,15 @@
 use crate::{ActiveTheme, Collapsible, h_flex, sidebar::SidebarItem, v_flex};
 use gpui::{
     App, ElementId, IntoElement, ParentElement, SharedString, Styled as _, Window, div,
-    prelude::FluentBuilder as _,
+    prelude::FluentBuilder as _, px,
 };
 
 /// A group of items in the [`super::Sidebar`].
 #[derive(Clone)]
 pub struct SidebarGroup<E: SidebarItem + 'static> {
     label: SharedString,
+    uppercase: bool,
+    bottom_border: bool,
     collapsed: bool,
     children: Vec<E>,
 }
@@ -17,9 +19,23 @@ impl<E: SidebarItem> SidebarGroup<E> {
     pub fn new(label: impl Into<SharedString>) -> Self {
         Self {
             label: label.into(),
+            uppercase: false,
+            bottom_border: false,
             collapsed: false,
             children: Vec::new(),
         }
+    }
+
+    /// Render the group label in uppercase.
+    pub fn uppercase(mut self, uppercase: bool) -> Self {
+        self.uppercase = uppercase;
+        self
+    }
+
+    /// Add a 1px bottom border below the group label.
+    pub fn label_border(mut self, border: bool) -> Self {
+        self.bottom_border = border;
+        self
     }
 
     /// Add a child to the sidebar group, the child should implement [`SidebarItem`].
@@ -57,6 +73,13 @@ impl<E: SidebarItem> SidebarItem for SidebarGroup<E> {
     ) -> impl IntoElement {
         let id = id.into();
 
+        let bottom_border = self.bottom_border;
+        let label: SharedString = if self.uppercase {
+            self.label.to_uppercase().into()
+        } else {
+            self.label
+        };
+
         v_flex()
             .relative()
             .when(!self.collapsed, |this| {
@@ -66,9 +89,15 @@ impl<E: SidebarItem> SidebarItem for SidebarGroup<E> {
                         .px_2()
                         .rounded(cx.theme().radius)
                         .text_xs()
-                        .text_color(cx.theme().sidebar_foreground.opacity(0.7))
+                        .text_color(cx.theme().sidebar_foreground.opacity(0.5))
                         .h_8()
-                        .child(self.label),
+                        .child(label)
+                        .when(bottom_border, |this| {
+                            this.border_b_1()
+                                .border_color(cx.theme().sidebar_border)
+                                .rounded_none()
+                                .mb(px(4.0))
+                        }),
                 )
             })
             .child(
