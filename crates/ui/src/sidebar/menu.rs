@@ -92,6 +92,7 @@ impl Styled for SidebarMenu {
 pub struct SidebarMenuItem {
     icon: Option<Icon>,
     label: SharedString,
+    subtitle: Option<SharedString>,
     handler: Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>,
     active: bool,
     default_open: bool,
@@ -109,6 +110,7 @@ impl SidebarMenuItem {
         Self {
             icon: None,
             label: label.into(),
+            subtitle: None,
             handler: Rc::new(|_, _, _| {}),
             active: false,
             collapsed: false,
@@ -119,6 +121,12 @@ impl SidebarMenuItem {
             disabled: false,
             context_menu: None,
         }
+    }
+
+    /// Set a subtitle line below the label, rendered in smaller muted text.
+    pub fn subtitle(mut self, subtitle: impl Into<SharedString>) -> Self {
+        self.subtitle = Some(subtitle.into());
+        self
     }
 
     /// Set the icon for the menu item
@@ -273,7 +281,10 @@ impl SidebarItem for SidebarMenuItem {
                         })
                     })
                     .when(!is_collapsed, |this| {
-                        this.h_7()
+                        let has_subtitle = self.subtitle.is_some();
+
+                        this.when(!has_subtitle, |this| this.h_7())
+                            .when(has_subtitle, |this| this.py_1p5())
                             .child(
                                 h_flex()
                                     .flex_1()
@@ -281,10 +292,22 @@ impl SidebarItem for SidebarMenuItem {
                                     .justify_between()
                                     .overflow_x_hidden()
                                     .child(
-                                        h_flex()
+                                        v_flex()
                                             .flex_1()
                                             .overflow_x_hidden()
-                                            .child(self.label.clone()),
+                                            .child(self.label.clone())
+                                            .when_some(self.subtitle.clone(), |this, subtitle| {
+                                                this.child(
+                                                    div()
+                                                        .text_xs()
+                                                        .text_color(
+                                                            cx.theme()
+                                                                .sidebar_foreground
+                                                                .opacity(0.5),
+                                                        )
+                                                        .child(subtitle),
+                                                )
+                                            }),
                                     )
                                     .when_some(self.suffix.clone(), |this, suffix| {
                                         this.child(suffix(window, cx).into_any_element())
