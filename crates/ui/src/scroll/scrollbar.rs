@@ -868,6 +868,18 @@ impl Element for Scrollbar {
                                                 offset.y,
                                             ));
                                         }
+
+                                        // Enter drag state so that holding the button and
+                                        // moving the mouse continues to drag the thumb.
+                                        // drag_pos is set to the thumb center because we
+                                        // just centered the thumb on the click position.
+                                        let center = if is_vertical {
+                                            point(px(0.), thumb_size / 2.)
+                                        } else {
+                                            point(thumb_size / 2., px(0.))
+                                        };
+                                        scroll_handle.start_drag();
+                                        state.set(state.get().with_drag_pos(axis, center));
                                     }
                                 }
                             }
