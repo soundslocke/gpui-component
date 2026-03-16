@@ -60,7 +60,7 @@ impl<E: ParentElement + Styled> ContextMenu<E> {
 
     /// Build the context menu using the given builder function.
     #[must_use]
-    fn menu<F>(mut self, builder: F) -> Self
+    pub fn menu<F>(mut self, builder: F) -> Self
     where
         F: Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
     {
