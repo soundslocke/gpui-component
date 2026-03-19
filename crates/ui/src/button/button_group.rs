@@ -56,7 +56,14 @@ impl ButtonGroup {
 
     /// Adds a button as a child to the ButtonGroup.
     pub fn child(mut self, child: Button) -> Self {
-        self.children.push(child.disabled(self.disabled));
+        // Only force-disable when the group itself is disabled; otherwise
+        // preserve the button's own disabled state.
+        let child = if self.disabled {
+            child.disabled(true)
+        } else {
+            child
+        };
+        self.children.push(child);
         self
     }
 
