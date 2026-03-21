@@ -1,10 +1,10 @@
 use std::{cell::RefCell, rc::Rc};
 
 use gpui::{
-    AnyElement, App, Context, Corner, DismissEvent, Element, ElementId, Entity, Focusable,
-    GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, InteractiveElement, IntoElement,
-    MouseButton, MouseDownEvent, ParentElement, Pixels, Point, StyleRefinement, Styled,
-    Subscription, Window, anchored, deferred, div, prelude::FluentBuilder, px,
+    AnyElement, App, Context, Corner, DismissEvent, Element, ElementId, Entity, FocusHandle,
+    Focusable, GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, InteractiveElement,
+    IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, StyleRefinement,
+    Styled, Subscription, Window, anchored, deferred, div, prelude::FluentBuilder, px,
 };
 
 use crate::menu::PopupMenu;
@@ -117,6 +117,7 @@ struct ContextMenuSharedState {
     open: bool,
     position: Point<Pixels>,
     _subscription: Option<Subscription>,
+    previous_focus: Option<FocusHandle>,
 }
 
 pub struct ContextMenuState {
@@ -133,6 +134,7 @@ impl Default for ContextMenuState {
                 open: false,
                 position: Default::default(),
                 _subscription: None,
+                previous_focus: None,
             })),
         }
     }
@@ -168,6 +170,7 @@ impl<E: ParentElement + Styled + IntoElement + 'static> Element for ContextMenu<
                     let shared_state = state.shared_state.borrow();
                     (shared_state.position, shared_state.open)
                 };
+                let shared_state_rc = state.shared_state.clone();
                 let menu_view = state.shared_state.borrow().menu_view.clone();
                 let mut menu_element = None;
                 if open {
@@ -197,6 +200,11 @@ impl<E: ParentElement + Styled + IntoElement + 'static> Element for ContextMenu<
                                                         .focus_handle(cx)
                                                         .contains_focused(window, cx)
                                                     {
+                                                        // Save the currently focused element before
+                                                        // the menu takes focus, so we can restore it
+                                                        // when the menu is dismissed.
+                                                        shared_state_rc.borrow_mut().previous_focus =
+                                                            window.focused(cx);
                                                         menu.focus_handle(cx).focus(window, cx);
                                                     }
 
@@ -302,8 +310,12 @@ impl<E: ParentElement + Styled + IntoElement + 'static> Element for ContextMenu<
                                 // Set up the subscription for dismiss handling
                                 let _subscription = window.subscribe(&menu, cx, {
                                     let shared_state = shared_state.clone();
-                                    move |_, _: &DismissEvent, window, _cx| {
-                                        shared_state.borrow_mut().open = false;
+                                    move |_, _: &DismissEvent, window, cx| {
+                                        let mut state = shared_state.borrow_mut();
+                                        state.open = false;
+                                        if let Some(handle) = state.previous_focus.take() {
+                                            handle.focus(window, cx);
+                                        }
                                         window.refresh();
                                     }
                                 });
