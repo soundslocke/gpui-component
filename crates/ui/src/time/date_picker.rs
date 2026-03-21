@@ -426,7 +426,7 @@ impl RenderOnce for DatePicker {
                             )
                             .when(!self.disabled, |this| {
                                 this.when(show_clean, |this| {
-                                    this.child(clear_button(cx).on_click(
+                                    this.child(clear_button(None, cx).on_click(
                                         window.listener_for(&self.state, DatePickerState::clean),
                                     ))
                                 })
