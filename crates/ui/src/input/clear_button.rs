@@ -6,9 +6,9 @@ use crate::{
 };
 
 #[inline]
-pub(crate) fn clear_button(cx: &App) -> Button {
+pub(crate) fn clear_button(icon: Option<Icon>, cx: &App) -> Button {
     Button::new("clean")
-        .icon(Icon::new(IconName::CircleX))
+        .icon(icon.unwrap_or_else(|| Icon::new(IconName::CircleX)))
         .ghost()
         .xsmall()
         .tab_stop(false)
