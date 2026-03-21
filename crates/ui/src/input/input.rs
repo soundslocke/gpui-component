@@ -11,7 +11,7 @@ use crate::input::element::{LINE_NUMBER_RIGHT_MARGIN, RIGHT_MARGIN};
 use crate::scroll::Scrollbar;
 use crate::spinner::Spinner;
 use crate::{ActiveTheme, Colorize, v_flex};
-use crate::{IconName, Size};
+use crate::{Icon, IconName, Size};
 use crate::{Selectable, StyledExt, h_flex};
 use crate::{Sizable, StyleSized};
 
@@ -40,6 +40,7 @@ pub struct Input {
     height: Option<DefiniteLength>,
     appearance: bool,
     cleanable: bool,
+    clean_icon: Option<Icon>,
     mask_toggle: bool,
     disabled: bool,
     bordered: bool,
@@ -78,6 +79,7 @@ impl Input {
             height: None,
             appearance: true,
             cleanable: false,
+            clean_icon: None,
             mask_toggle: false,
             disabled: false,
             bordered: true,
@@ -130,6 +132,12 @@ impl Input {
     /// Set whether to show the clear button when the input field is not empty, default is false.
     pub fn cleanable(mut self, cleanable: bool) -> Self {
         self.cleanable = cleanable;
+        self
+    }
+
+    /// Override the icon used for the clear button (default: CircleX).
+    pub fn clean_icon(mut self, icon: impl Into<Icon>) -> Self {
+        self.clean_icon = Some(icon.into());
         self
     }
 
@@ -425,7 +433,7 @@ impl RenderOnce for Input {
                             this.child(Self::render_toggle_mask_button(&self.state, cx))
                         })
                         .when(show_clear_button, |this| {
-                            this.child(clear_button(cx).on_click({
+                            this.child(clear_button(self.clean_icon, cx).on_click({
                                 let state = self.state.clone();
                                 move |_, window, cx| {
                                     state.update(cx, |state, cx| {
