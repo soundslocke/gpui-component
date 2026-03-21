@@ -632,7 +632,7 @@ where
         let trailing: AnyElement = if has_custom_trigger {
             div().into_any_element()
         } else if show_clean {
-            clear_button(cx)
+            clear_button(None, cx)
                 .map(|this| {
                     if disabled {
                         this.disabled(true)

@@ -519,7 +519,7 @@ where
                                         .child(self.display_title(window, cx)),
                                 )
                                 .when(show_clean, |this| {
-                                    this.child(clear_button(cx).map(|this| {
+                                    this.child(clear_button(None, cx).map(|this| {
                                         if self.state.disabled {
                                             this.disabled(true)
                                         } else {

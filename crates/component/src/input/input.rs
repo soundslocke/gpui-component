@@ -12,7 +12,7 @@ use crate::input::clear_button;
 use crate::native_menu::NativeMenu;
 use crate::spinner::Spinner;
 use crate::{ActiveTheme, Colorize, v_flex};
-use crate::{IconName, Size};
+use crate::{Icon, IconName, Size};
 use crate::{RoleOverride, Selectable, StyledExt, h_flex};
 use crate::{Sizable, StyleSized};
 use gpui_base::InputBase as BaseInput;
@@ -115,6 +115,7 @@ pub struct Input {
     height: Option<DefiniteLength>,
     appearance: bool,
     cleanable: bool,
+    clean_icon: Option<Icon>,
     mask_toggle: bool,
     disabled: bool,
     readonly: bool,
@@ -186,6 +187,7 @@ impl Input {
             height: None,
             appearance: true,
             cleanable: false,
+            clean_icon: None,
             mask_toggle: false,
             disabled: false,
             readonly: false,
@@ -255,6 +257,12 @@ impl Input {
     /// Set whether to show the clear button when the input field is not empty, default is false.
     pub fn cleanable(mut self, cleanable: bool) -> Self {
         self.cleanable = cleanable;
+        self
+    }
+
+    /// Override the icon used for the clear button (default: CircleX).
+    pub fn clean_icon(mut self, icon: impl Into<Icon>) -> Self {
+        self.clean_icon = Some(icon.into());
         self
     }
 
@@ -615,7 +623,7 @@ impl RenderOnce for Input {
                             this.child(Self::render_toggle_mask_button(&state, cx))
                         })
                         .when(show_clear_button, |this| {
-                            this.child(clear_button(cx).on_click({
+                            this.child(clear_button(self.clean_icon, cx).on_click({
                                 let state = state.clone();
                                 move |_, window, cx| {
                                     state.clean(window, cx);
