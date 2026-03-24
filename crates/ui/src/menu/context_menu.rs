@@ -41,6 +41,8 @@ pub struct ContextMenu<E: ParentElement + Styled + Sized> {
     id: ElementId,
     element: Option<E>,
     menu: Option<Rc<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu>>,
+    on_open: Option<Rc<dyn Fn(&mut Window, &mut App)>>,
+    on_close: Option<Rc<dyn Fn(&mut Window, &mut App)>>,
     // This is not in use, just for style refinement forwarding.
     _ignore_style: StyleRefinement,
     anchor: Corner,
@@ -53,6 +55,8 @@ impl<E: ParentElement + Styled> ContextMenu<E> {
             id: id.into(),
             element: Some(element),
             menu: None,
+            on_open: None,
+            on_close: None,
             anchor: Corner::TopLeft,
             _ignore_style: StyleRefinement::default(),
         }
@@ -65,6 +69,20 @@ impl<E: ParentElement + Styled> ContextMenu<E> {
         F: Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
     {
         self.menu = Some(Rc::new(builder));
+        self
+    }
+
+    /// Set a callback to be called when the context menu is opened.
+    #[must_use]
+    pub fn on_open(mut self, callback: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_open = Some(Rc::new(callback));
+        self
+    }
+
+    /// Set a callback to be called when the context menu is closed.
+    #[must_use]
+    pub fn on_close(mut self, callback: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_close = Some(Rc::new(callback));
         self
     }
 
@@ -268,8 +286,10 @@ impl<E: ParentElement + Styled + IntoElement + 'static> Element for ContextMenu<
             element.paint(window, cx);
         }
 
-        // Take the builder before setting up element state to avoid borrow issues
+        // Take the builder and callbacks before setting up element state to avoid borrow issues
         let builder = self.menu.clone();
+        let on_open = self.on_open.clone();
+        let on_close = self.on_close.clone();
 
         self.with_element_state(
             id.unwrap(),
@@ -295,10 +315,15 @@ impl<E: ParentElement + Styled + IntoElement + 'static> Element for ContextMenu<
                             shared_state.open = true;
                         }
 
+                        if let Some(on_open) = &on_open {
+                            on_open(window, cx);
+                        }
+
                         // Use defer to build the menu in the next frame, avoiding race conditions
                         window.defer(cx, {
                             let shared_state = shared_state.clone();
                             let builder = builder.clone();
+                            let on_close = on_close.clone();
                             move |window, cx| {
                                 let menu = PopupMenu::build(window, cx, move |menu, window, cx| {
                                     let Some(build) = &builder else {
@@ -315,6 +340,9 @@ impl<E: ParentElement + Styled + IntoElement + 'static> Element for ContextMenu<
                                         state.open = false;
                                         if let Some(handle) = state.previous_focus.take() {
                                             handle.focus(window, cx);
+                                        }
+                                        if let Some(on_close) = &on_close {
+                                            on_close(window, cx);
                                         }
                                         window.refresh();
                                     }
