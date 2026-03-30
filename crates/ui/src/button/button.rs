@@ -201,6 +201,7 @@ pub struct Button {
     )>,
     on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
     on_hover: Option<Rc<dyn Fn(&bool, &mut Window, &mut App)>>,
+    line_through: bool,
     loading: bool,
     loading_icon: Option<Icon>,
 
@@ -236,6 +237,7 @@ impl Button {
             tooltip: None,
             on_click: None,
             on_hover: None,
+            line_through: false,
             loading: false,
             compact: false,
             outline: false,
@@ -315,6 +317,12 @@ impl Button {
     /// Set the button to compact mode, then padding will be reduced.
     pub fn compact(mut self) -> Self {
         self.compact = true;
+        self
+    }
+
+    /// Apply a strikethrough decoration to the button label and icon.
+    pub fn line_through(mut self) -> Self {
+        self.line_through = true;
         self
     }
 
@@ -572,12 +580,26 @@ impl RenderOnce for Button {
                 })
             })
             .child({
+                let line_through = self.line_through;
+                let line_through_color = normal_style.fg;
                 h_flex()
                     .id("label")
                     .size_full()
+                    .relative()
                     .items_center()
                     .justify_center()
                     .button_text_size(self.size)
+                    .when(line_through, |this| {
+                        this.child(
+                            div()
+                                .absolute()
+                                .top(relative(0.5))
+                                .left_0()
+                                .w_full()
+                                .h(px(1.))
+                                .bg(line_through_color),
+                        )
+                    })
                     .map(|this| match self.size {
                         Size::XSmall => this.gap_1(),
                         Size::Small => this.gap_1(),
