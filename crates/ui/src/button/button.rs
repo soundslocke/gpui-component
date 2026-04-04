@@ -199,6 +199,7 @@ pub struct Button {
         SharedString,
         Option<(Rc<Box<dyn Action>>, Option<SharedString>)>,
     )>,
+    custom_tooltip: Option<Rc<dyn Fn(&mut Window, &mut App) -> gpui::AnyView>>,
     on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
     on_hover: Option<Rc<dyn Fn(&bool, &mut Window, &mut App)>>,
     line_through: bool,
@@ -235,6 +236,7 @@ impl Button {
             border_edges: Edges::all(true),
             size: Size::Medium,
             tooltip: None,
+            custom_tooltip: None,
             on_click: None,
             on_hover: None,
             line_through: false,
@@ -305,6 +307,16 @@ impl Button {
                 context.map(|c| c.to_string().into()),
             )),
         ));
+        self
+    }
+
+    /// Set a custom tooltip builder for the button. This takes precedence over
+    /// text tooltips set via [`tooltip`](Self::tooltip).
+    pub fn custom_tooltip(
+        mut self,
+        build: impl Fn(&mut Window, &mut App) -> gpui::AnyView + 'static,
+    ) -> Self {
+        self.custom_tooltip = Some(Rc::new(build));
         self
     }
 
@@ -632,17 +644,20 @@ impl RenderOnce for Button {
                     .border_color(normal_style.border.opacity(0.8))
                     .text_color(normal_style.fg.opacity(0.8))
             })
-            .when_some(self.tooltip, |this, (tooltip, action)| {
-                this.tooltip(move |window, cx| {
-                    Tooltip::new(tooltip.clone())
-                        .when_some(action.clone(), |this, (action, context)| {
-                            this.action(
-                                action.boxed_clone().as_ref(),
-                                context.as_ref().map(|c| c.as_ref()),
-                            )
-                        })
-                        .build(window, cx)
-                })
+            .map(|this| match self.custom_tooltip {
+                Some(build) => this.tooltip(move |window, cx| build(window, cx)),
+                None => this.when_some(self.tooltip, |this, (tooltip, action)| {
+                    this.tooltip(move |window, cx| {
+                        Tooltip::new(tooltip.clone())
+                            .when_some(action.clone(), |this, (action, context)| {
+                                this.action(
+                                    action.boxed_clone().as_ref(),
+                                    context.as_ref().map(|c| c.as_ref()),
+                                )
+                            })
+                            .build(window, cx)
+                    })
+                }),
             })
             .focus_ring(is_focused, px(0.), window, cx)
     }
