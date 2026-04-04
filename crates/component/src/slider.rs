@@ -89,6 +89,7 @@ pub struct Slider {
     style: StyleRefinement,
     disabled: bool,
     reverse: bool,
+    show_fill: bool,
 }
 
 impl Slider {
@@ -100,6 +101,7 @@ impl Slider {
             style: StyleRefinement::default(),
             disabled: false,
             reverse: false,
+            show_fill: true,
         }
     }
 
@@ -132,6 +134,14 @@ impl Slider {
     /// range sliders.
     pub fn reverse(mut self) -> Self {
         self.reverse = true;
+        self
+    }
+
+    /// Set whether the filled bar from min to the current value is visible.
+    /// Default: `true`. Set to `false` for point-selection sliders where
+    /// only the thumb position matters.
+    pub fn show_fill(mut self, show: bool) -> Self {
+        self.show_fill = show;
         self
     }
 }
@@ -290,18 +300,20 @@ impl RenderOnce for Slider {
                             .bg(bar_color.opacity(0.2))
                             .active(|this| this.bg(bar_color.opacity(0.4)))
                             .corner_radii(radius)
-                            .child(
-                                div()
-                                    .absolute()
-                                    .when(axis.is_horizontal(), |this| {
-                                        this.h_full().left(bar_start).right(bar_end)
-                                    })
-                                    .when(axis.is_vertical(), |this| {
-                                        this.w_full().bottom(bar_start).top(bar_end)
-                                    })
-                                    .bg(bar_color)
-                                    .rounded_full_style(cx),
-                            )
+                            .when(self.show_fill, |this| {
+                                this.child(
+                                    div()
+                                        .absolute()
+                                        .when(axis.is_horizontal(), |this| {
+                                            this.h_full().left(bar_start).right(bar_end)
+                                        })
+                                        .when(axis.is_vertical(), |this| {
+                                            this.w_full().bottom(bar_start).top(bar_end)
+                                        })
+                                        .bg(bar_color)
+                                        .rounded_full_style(cx),
+                                )
+                            })
                             .when_some(start_ring, |this, ring| {
                                 this.child(thumb(relative(percentage.start), true, ring))
                             })
