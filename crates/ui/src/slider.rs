@@ -382,6 +382,8 @@ pub struct Slider {
     axis: Axis,
     style: StyleRefinement,
     disabled: bool,
+    show_fill: bool,
+    reverse_fill: bool,
 }
 
 impl Slider {
@@ -392,6 +394,8 @@ impl Slider {
             state: state.clone(),
             style: StyleRefinement::default(),
             disabled: false,
+            show_fill: true,
+            reverse_fill: false,
         }
     }
 
@@ -410,6 +414,23 @@ impl Slider {
     /// Set the disabled state of the slider, default: false
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    /// Set whether the filled bar from min to the current value is visible.
+    /// Default: `true`. Set to `false` for point-selection sliders where
+    /// only the thumb position matters.
+    pub fn show_fill(mut self, show: bool) -> Self {
+        self.show_fill = show;
+        self
+    }
+
+    /// Reverse the fill direction for single-value mode: fill from the thumb
+    /// to the maximum instead of from the minimum to the thumb. Useful for
+    /// "at least" / "greater than" semantics where the selected region is
+    /// everything above the threshold.
+    pub fn reverse_fill(mut self, reverse: bool) -> Self {
+        self.reverse_fill = reverse;
         self
     }
 
@@ -501,8 +522,12 @@ impl RenderOnce for Slider {
         let state = self.state.read(cx);
         let is_range = state.value().is_range();
         let percentage = state.percentage.clone();
-        let bar_start = relative(percentage.start);
-        let bar_end = relative(1. - percentage.end);
+        let (bar_start, bar_end) = if self.reverse_fill && !is_range {
+            // Fill from thumb to max instead of min to thumb.
+            (relative(percentage.end), relative(0.0))
+        } else {
+            (relative(percentage.start), relative(1. - percentage.end))
+        };
         let rem_size = window.rem_size();
 
         let bar_color = self
@@ -625,18 +650,22 @@ impl RenderOnce for Slider {
                             .bg(bar_color.opacity(0.2))
                             .active(|this| this.bg(bar_color.opacity(0.4)))
                             .corner_radii(radius)
-                            .child(
-                                div()
-                                    .absolute()
-                                    .when(axis.is_horizontal(), |this| {
-                                        this.h_full().left(bar_start).right(bar_end)
-                                    })
-                                    .when(axis.is_vertical(), |this| {
-                                        this.w_full().bottom(bar_start).top(bar_end)
-                                    })
-                                    .bg(bar_color)
-                                    .when(!cx.theme().radius.is_zero(), |this| this.rounded_full()),
-                            )
+                            .when(self.show_fill, |this| {
+                                this.child(
+                                    div()
+                                        .absolute()
+                                        .when(axis.is_horizontal(), |this| {
+                                            this.h_full().left(bar_start).right(bar_end)
+                                        })
+                                        .when(axis.is_vertical(), |this| {
+                                            this.w_full().bottom(bar_start).top(bar_end)
+                                        })
+                                        .bg(bar_color)
+                                        .when(!cx.theme().radius.is_zero(), |this| {
+                                            this.rounded_full()
+                                        }),
+                                )
+                            })
                             .when(is_range, |this| {
                                 this.child(self.render_thumb(
                                     relative(percentage.start),
