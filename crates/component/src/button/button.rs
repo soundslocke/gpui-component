@@ -364,6 +364,16 @@ impl Button {
         self
     }
 
+    /// Set a custom tooltip builder for the button. This takes precedence over
+    /// text tooltips set via [`tooltip`](Self::tooltip).
+    pub fn custom_tooltip(
+        mut self,
+        build: impl Fn(&mut Window, &mut App) -> gpui::AnyView + 'static,
+    ) -> Self {
+        self.tooltip_builder = Some(Rc::new(build));
+        self
+    }
+
     /// Set the tooltip of the button with action to show keybinding.
     pub fn tooltip_with_action(
         mut self,
