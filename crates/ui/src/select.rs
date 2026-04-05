@@ -348,6 +348,7 @@ pub struct SelectState<D: SelectDelegate + 'static> {
     focus_handle: FocusHandle,
     options: SelectOptions,
     searchable: bool,
+    search_icon: Option<Icon>,
     list: Entity<ListState<SelectListDelegate<D>>>,
     empty: Option<Box<dyn Fn(&Window, &App) -> AnyElement>>,
     /// Store the bounds of the input
@@ -594,6 +595,7 @@ where
             focus_handle,
             options: SelectOptions::default(),
             searchable: false,
+            search_icon: None,
             list,
             selected_value: None,
             open: false,
@@ -611,6 +613,12 @@ where
     /// When `true`, there will be a search input at the top of the dropdown menu.
     pub fn searchable(mut self, searchable: bool) -> Self {
         self.searchable = searchable;
+        self
+    }
+
+    /// Sets the icon for the search input, default is `IconName::Search`.
+    pub fn search_icon(mut self, icon: impl Into<Icon>) -> Self {
+        self.search_icon = Some(icon.into());
         self
     }
 
@@ -917,6 +925,10 @@ where
                                                     |this, placeholder| {
                                                         this.search_placeholder(placeholder)
                                                     },
+                                                )
+                                                .when_some(
+                                                    self.search_icon.clone(),
+                                                    |this, icon| this.search_icon(icon),
                                                 )
                                                 .with_size(self.options.size)
                                                 .max_h(self.options.menu_max_h)
