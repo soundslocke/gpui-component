@@ -158,6 +158,7 @@ where
     }
 
     /// Return true if either the list or the search input is focused.
+    #[allow(dead_code)]
     pub(crate) fn is_focused(&self, window: &Window, cx: &App) -> bool {
         self.focus_handle.is_focused(window) || self.query_input.focus_handle(cx).is_focused(window)
     }
