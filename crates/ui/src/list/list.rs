@@ -48,6 +48,7 @@ struct ListOptions {
     size: Size,
     scrollbar_visible: bool,
     search_placeholder: Option<SharedString>,
+    search_icon: Option<Icon>,
     max_height: Option<Length>,
     paddings: EdgesRefinement<DefiniteLength>,
 }
@@ -59,6 +60,7 @@ impl Default for ListOptions {
             scrollbar_visible: true,
             max_height: None,
             search_placeholder: None,
+            search_icon: None,
             paddings: EdgesRefinement::default(),
         }
     }
@@ -640,7 +642,10 @@ where
                             Input::new(&input)
                                 .with_size(self.options.size)
                                 .prefix(
-                                    Icon::new(IconName::Search)
+                                    self.options
+                                        .search_icon
+                                        .take()
+                                        .unwrap_or_else(|| Icon::new(IconName::Search))
                                         .text_color(cx.theme().muted_foreground),
                                 )
                                 .cleanable(true)
@@ -703,6 +708,12 @@ where
     /// Sets the placeholder text for the search input.
     pub fn search_placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
         self.options.search_placeholder = Some(placeholder.into());
+        self
+    }
+
+    /// Sets the icon for the search input, default is `IconName::Search`.
+    pub fn search_icon(mut self, icon: impl Into<Icon>) -> Self {
+        self.options.search_icon = Some(icon.into());
         self
     }
 }
