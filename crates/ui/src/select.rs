@@ -1,15 +1,17 @@
+use std::fmt;
+
 use gpui::{
     AnyElement, App, AppContext, Bounds, ClickEvent, Context, DismissEvent, Edges, ElementId,
     Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyBinding,
-    Length, ParentElement, Pixels, Render, RenderOnce, SharedString,
-    StatefulInteractiveElement, StyleRefinement, Styled, Subscription, Task, WeakEntity, Window,
-    anchored, deferred, div, prelude::FluentBuilder, px, rems,
+    Length, ParentElement, Pixels, Render, RenderOnce, SharedString, StatefulInteractiveElement,
+    StyleRefinement, Styled, Subscription, Task, WeakEntity, Window, anchored, deferred, div,
+    prelude::FluentBuilder, px, rems,
 };
 use rust_i18n::t;
 
 use crate::{
-    ActiveTheme, Disableable, ElementExt as _, Icon, IconName, IndexPath, Selectable, Sizable,
-    Size, StyleSized, StyledExt,
+    ActiveTheme, Disableable, ElementExt as _, Icon, IconName, IndexPath, Selectable,
+    Sizable, Size, StyleSized, StyledExt,
     actions::{Cancel, Confirm, SelectDown, SelectUp},
     global_state::GlobalState,
     h_flex,
@@ -453,13 +455,19 @@ impl<I: SelectItem> SelectDelegate for SearchableVec<SelectGroup<I>> {
     }
 
     fn section(&self, section: usize) -> Option<AnyElement> {
-        Some(
-            self.matched_items
-                .get(section)?
-                .title
-                .clone()
-                .into_any_element(),
-        )
+        let group = self.matched_items.get(section)?;
+        if let Some(icon) = &group.icon {
+            Some(
+                h_flex()
+                    .gap_1()
+                    .items_center()
+                    .child(icon.clone().xsmall())
+                    .child(group.title.clone())
+                    .into_any_element(),
+            )
+        } else {
+            Some(group.title.clone().into_any_element())
+        }
     }
 
     fn item(&self, ix: IndexPath) -> Option<&Self::Item> {
@@ -506,10 +514,21 @@ impl<I: SelectItem> SelectDelegate for SearchableVec<SelectGroup<I>> {
 }
 
 /// A group of select items with a title.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SelectGroup<I: SelectItem> {
     pub title: SharedString,
+    pub icon: Option<Icon>,
     pub items: Vec<I>,
+}
+
+impl<I: SelectItem + fmt::Debug> fmt::Debug for SelectGroup<I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SelectGroup")
+            .field("title", &self.title)
+            .field("icon", &self.icon.as_ref().map(|_| ".."))
+            .field("items", &self.items)
+            .finish()
+    }
 }
 
 impl<I> SelectGroup<I>
@@ -520,8 +539,15 @@ where
     pub fn new(title: impl Into<SharedString>) -> Self {
         Self {
             title: title.into(),
+            icon: None,
             items: vec![],
         }
+    }
+
+    /// Set an icon for the group header.
+    pub fn icon(mut self, icon: impl Into<Icon>) -> Self {
+        self.icon = Some(icon.into());
+        self
     }
 
     /// Add an item to the group.
