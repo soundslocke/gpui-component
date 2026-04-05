@@ -561,14 +561,8 @@ where
         };
 
         let list = cx.new(|cx| ListState::new(delegate, window, cx).reset_on_cancel(false));
-        let list_focus_handle = list.read(cx).focus_handle.clone();
-        let list_search_focus_handle = list.read(cx).query_input.focus_handle(cx);
 
-        let _subscriptions = vec![
-            cx.on_blur(&list_focus_handle, window, Self::on_blur),
-            cx.on_blur(&list_search_focus_handle, window, Self::on_blur),
-            cx.on_blur(&focus_handle, window, Self::on_blur),
-        ];
+        let _subscriptions = vec![];
 
         let mut this = Self {
             focus_handle,
@@ -658,25 +652,6 @@ where
             .map(|item| item.value().clone());
     }
 
-    fn on_blur(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // When the select and dropdown menu are both not focused, close the dropdown menu.
-        if self.list.read(cx).is_focused(window, cx) || self.focus_handle.is_focused(window) {
-            return;
-        }
-
-        // If the selected index is not the final selected index, we need to restore it.
-        let final_selected_index = self.final_selected_index;
-        let selected_index = self.selected_index(cx);
-        if final_selected_index != selected_index {
-            self.list.update(cx, |list, cx| {
-                list.set_selected_index(self.final_selected_index, window, cx);
-            });
-        }
-
-        self.set_open(false, cx);
-        cx.notify();
-    }
-
     fn up(&mut self, _: &SelectUp, window: &mut Window, cx: &mut Context<Self>) {
         if !self.open {
             self.set_open(true, cx);
@@ -717,12 +692,27 @@ where
         cx.notify();
     }
 
-    fn escape(&mut self, _: &Cancel, _: &mut Window, cx: &mut Context<Self>) {
+    fn escape(&mut self, _: &Cancel, window: &mut Window, cx: &mut Context<Self>) {
         if !self.open {
             cx.propagate();
+            return;
+        }
+
+        self.cancel_and_close(window, cx);
+    }
+
+    /// Close the dropdown and restore the previously confirmed selection.
+    fn cancel_and_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let final_selected_index = self.final_selected_index;
+        let selected_index = self.selected_index(cx);
+        if final_selected_index != selected_index {
+            self.list.update(cx, |list, cx| {
+                list.set_selected_index(final_selected_index, window, cx);
+            });
         }
 
         self.set_open(false, cx);
+        self.focus(window, cx);
         cx.notify();
     }
 
@@ -803,7 +793,6 @@ where
             .update(cx, |list, cx| list.set_searchable(searchable, cx));
 
         div()
-            .size_full()
             .relative()
             .child(
                 div()
@@ -909,7 +898,7 @@ where
                                         ),
                                 )
                                 .on_mouse_down_out(cx.listener(|this, _, window, cx| {
-                                    this.escape(&Cancel, window, cx);
+                                    this.cancel_and_close(window, cx);
                                 })),
                         ),
                     )
@@ -1052,7 +1041,6 @@ where
             .on_action(window.listener_for(&self.state, SelectState::down))
             .on_action(window.listener_for(&self.state, SelectState::enter))
             .on_action(window.listener_for(&self.state, SelectState::escape))
-            .size_full()
             .child(self.state)
     }
 }
