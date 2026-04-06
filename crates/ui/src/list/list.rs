@@ -257,6 +257,49 @@ where
         }
     }
 
+    /// Programmatically move selection to the next item.
+    pub(crate) fn select_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.on_action_select_next(&SelectDown, window, cx);
+    }
+
+    /// Programmatically move selection to the previous item.
+    pub(crate) fn select_prev(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.on_action_select_prev(&SelectUp, window, cx);
+    }
+
+    /// Programmatically confirm the current selection.
+    pub(crate) fn confirm_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.on_action_confirm(&Confirm { secondary: false }, window, cx);
+    }
+
+    /// Programmatically trigger a search query on the delegate, resetting
+    /// scroll and selecting the first result. Use this when the search input
+    /// is external to the List (i.e. `searchable` is `false`).
+    pub(crate) fn set_query(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.set_searching(true, window, cx);
+        let search = self.delegate.perform_search(query, window, cx);
+        if self.rows_cache.len() > 0 {
+            self._set_selected_index(Some(IndexPath::default()), window, cx);
+        } else {
+            self._set_selected_index(None, window, cx);
+        }
+        let text = query.to_string();
+        self._search_task = cx.spawn_in(window, async move |this, window| {
+            search.await;
+            _ = this.update_in(window, |this, _, _| {
+                this.scroll_handle.scroll_to_item(0, ScrollStrategy::Top);
+                this.last_query = Some(text);
+            });
+            window
+                .background_executor()
+                .timer(Duration::from_millis(100))
+                .await;
+            _ = this.update_in(window, |this, window, cx| {
+                this.set_searching(false, window, cx);
+            });
+        });
+    }
+
     fn on_query_input_event(
         &mut self,
         state: &Entity<InputState>,

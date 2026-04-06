@@ -60,6 +60,7 @@ pub mod resizable;
 pub mod scroll;
 pub mod select;
 pub mod setting;
+pub mod suggest_input;
 pub mod sheet;
 pub mod sidebar;
 pub mod skeleton;
