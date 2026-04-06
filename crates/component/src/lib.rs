@@ -73,6 +73,7 @@ pub mod searchable_list;
 pub mod select;
 pub mod separator;
 pub mod setting;
+pub mod suggest_input;
 pub mod sheet;
 pub mod shimmer;
 pub mod sidebar;
