@@ -7,11 +7,14 @@ use crate::{
     v_flex,
 };
 use gpui::{
-    AnyElement, App, ClickEvent, ElementId, InteractiveElement as _, IntoElement,
-    ParentElement as _, SharedString, StatefulInteractiveElement as _, StyleRefinement, Styled,
-    Window, div, percentage, prelude::FluentBuilder,
+    AnyElement, App, ClickEvent, ElementId, FocusHandle, InteractiveElement as _, IntoElement,
+    KeyDownEvent, MouseButton, ParentElement as _, SharedString,
+    StatefulInteractiveElement as _, StyleRefinement, Styled, Window, div, percentage,
+    prelude::FluentBuilder,
 };
 use std::rc::Rc;
+
+type SidebarKeyHandler = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
 
 /// Menu for the [`super::Sidebar`]
 #[derive(Clone)]
@@ -19,6 +22,12 @@ pub struct SidebarMenu {
     style: StyleRefinement,
     collapsed: bool,
     items: Vec<SidebarMenuItem>,
+    focus_handle: Option<FocusHandle>,
+    on_select_prev: Option<SidebarKeyHandler>,
+    on_select_next: Option<SidebarKeyHandler>,
+    on_select_first: Option<SidebarKeyHandler>,
+    on_select_last: Option<SidebarKeyHandler>,
+    on_confirm: Option<SidebarKeyHandler>,
 }
 
 impl SidebarMenu {
@@ -28,6 +37,12 @@ impl SidebarMenu {
             style: StyleRefinement::default(),
             items: Vec::new(),
             collapsed: false,
+            focus_handle: None,
+            on_select_prev: None,
+            on_select_next: None,
+            on_select_first: None,
+            on_select_last: None,
+            on_confirm: None,
         }
     }
 
@@ -45,6 +60,64 @@ impl SidebarMenu {
         children: impl IntoIterator<Item = impl Into<SidebarMenuItem>>,
     ) -> Self {
         self.items = children.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Make this menu focusable using the given focus handle.
+    ///
+    /// When attached, the menu's root element calls `track_focus` so the
+    /// caller can place it in the tab order (configure the handle with
+    /// `tab_stop(true)` to enable Tab navigation). While focused, the menu
+    /// dispatches keyboard events to the `on_select_*` / `on_confirm`
+    /// callbacks below so the parent can drive selection through its own
+    /// data model.
+    pub fn track_focus(mut self, focus_handle: &FocusHandle) -> Self {
+        self.focus_handle = Some(focus_handle.clone());
+        self
+    }
+
+    /// Callback fired when the Up arrow key is pressed while the menu is focused.
+    pub fn on_select_prev(
+        mut self,
+        handler: impl Fn(&mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_select_prev = Some(Rc::new(handler));
+        self
+    }
+
+    /// Callback fired when the Down arrow key is pressed while the menu is focused.
+    pub fn on_select_next(
+        mut self,
+        handler: impl Fn(&mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_select_next = Some(Rc::new(handler));
+        self
+    }
+
+    /// Callback fired when the Home key is pressed while the menu is focused.
+    pub fn on_select_first(
+        mut self,
+        handler: impl Fn(&mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_select_first = Some(Rc::new(handler));
+        self
+    }
+
+    /// Callback fired when the End key is pressed while the menu is focused.
+    pub fn on_select_last(
+        mut self,
+        handler: impl Fn(&mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_select_last = Some(Rc::new(handler));
+        self
+    }
+
+    /// Callback fired when Enter or Space is pressed while the menu is focused.
+    pub fn on_confirm(
+        mut self,
+        handler: impl Fn(&mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_confirm = Some(Rc::new(handler));
         self
     }
 }
@@ -68,13 +141,69 @@ impl SidebarItem for SidebarMenu {
         cx: &mut App,
     ) -> impl IntoElement {
         let id = id.into();
+        let collapsed = self.collapsed;
+        let focus_handle = self.focus_handle.clone();
+        let parent_focusable = focus_handle.is_some();
+        let parent_focused = focus_handle
+            .as_ref()
+            .map_or(false, |fh| fh.is_focused(window));
+        let on_select_prev = self.on_select_prev.clone();
+        let on_select_next = self.on_select_next.clone();
+        let on_select_first = self.on_select_first.clone();
+        let on_select_last = self.on_select_last.clone();
+        let on_confirm = self.on_confirm.clone();
+        let has_key_handlers = on_select_prev.is_some()
+            || on_select_next.is_some()
+            || on_select_first.is_some()
+            || on_select_last.is_some()
+            || on_confirm.is_some();
 
         v_flex()
             .gap_2()
             .refine_style(&self.style)
+            .when_some(focus_handle.as_ref(), |this, fh| this.track_focus(fh))
+            .when(has_key_handlers, |this| {
+                this.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                    match event.keystroke.key.as_str() {
+                        "up" => {
+                            if let Some(handler) = &on_select_prev {
+                                handler(window, cx);
+                                cx.stop_propagation();
+                            }
+                        }
+                        "down" => {
+                            if let Some(handler) = &on_select_next {
+                                handler(window, cx);
+                                cx.stop_propagation();
+                            }
+                        }
+                        "home" => {
+                            if let Some(handler) = &on_select_first {
+                                handler(window, cx);
+                                cx.stop_propagation();
+                            }
+                        }
+                        "end" => {
+                            if let Some(handler) = &on_select_last {
+                                handler(window, cx);
+                                cx.stop_propagation();
+                            }
+                        }
+                        "enter" | "space" => {
+                            if let Some(handler) = &on_confirm {
+                                handler(window, cx);
+                                cx.stop_propagation();
+                            }
+                        }
+                        _ => {}
+                    }
+                })
+            })
             .children(self.items.into_iter().enumerate().map(|(ix, item)| {
                 let id = SharedString::from(format!("{}-{}", id, ix));
-                item.collapsed(self.collapsed)
+                item.collapsed(collapsed)
+                    .with_parent_focused(parent_focused)
+                    .with_parent_focusable(parent_focusable)
                     .render(id, window, cx)
                     .into_any_element()
             }))
@@ -102,6 +231,14 @@ pub struct SidebarMenuItem {
     suffix: Option<Rc<dyn Fn(&mut Window, &mut App) -> AnyElement + 'static>>,
     disabled: bool,
     context_menu: Option<Rc<dyn Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + 'static>>,
+    /// Set internally by [`SidebarMenu`] when its focus handle is focused,
+    /// so the active item can render a focus ring as the keyboard cursor.
+    parent_focused: bool,
+    /// Set internally by [`SidebarMenu`] when it has a focus handle attached,
+    /// so the item can suppress GPUI's mouse-down auto-focus on the parent
+    /// (which would otherwise cause the focus ring to flash on the previously
+    /// selected item between mouse-down and the click handler running).
+    parent_focusable: bool,
 }
 
 impl SidebarMenuItem {
@@ -120,6 +257,8 @@ impl SidebarMenuItem {
             suffix: None,
             disabled: false,
             context_menu: None,
+            parent_focused: false,
+            parent_focusable: false,
         }
     }
 
@@ -209,6 +348,23 @@ impl SidebarMenuItem {
         self.context_menu = Some(Rc::new(f));
         self
     }
+
+    /// Internal: marks this item as belonging to a [`SidebarMenu`] whose
+    /// focus handle is currently focused. Used by [`SidebarMenu`] to draw a
+    /// focus ring on the active item.
+    pub(super) fn with_parent_focused(mut self, parent_focused: bool) -> Self {
+        self.parent_focused = parent_focused;
+        self
+    }
+
+    /// Internal: marks this item as belonging to a [`SidebarMenu`] whose
+    /// focus handle is attached. Lets the item suppress GPUI's mouse-down
+    /// auto-focus on the parent menu so clicking an item doesn't briefly
+    /// focus the parent (which causes a focus-ring flash).
+    pub(super) fn with_parent_focusable(mut self, parent_focusable: bool) -> Self {
+        self.parent_focusable = parent_focusable;
+        self
+    }
 }
 
 impl FluentBuilder for SidebarMenuItem {}
@@ -233,6 +389,7 @@ impl SidebarItem for SidebarMenuItem {
     ) -> impl IntoElement {
         let click_to_open = self.click_to_open;
         let default_open = self.default_open;
+        let parent_focusable = self.parent_focusable;
         let id = id.into();
         let is_submenu = self.is_submenu();
         let open_state = if is_submenu {
@@ -245,6 +402,7 @@ impl SidebarItem for SidebarMenuItem {
         let is_active = self.active;
         let is_hoverable = !is_active && !self.disabled;
         let is_disabled = self.disabled;
+        let is_keyboard_focused = self.parent_focused && is_active;
         let is_open = open_state
             .as_ref()
             .map_or(false, |s| !is_collapsed && *s.read(cx));
@@ -256,12 +414,25 @@ impl SidebarItem for SidebarMenuItem {
                 h_flex()
                     .size_full()
                     .id("item")
+                    .relative()
                     .overflow_x_hidden()
                     .flex_shrink_0()
                     .p_2()
                     .gap_x_2()
                     .rounded(cx.theme().radius)
                     .text_sm()
+                    // Suppress GPUI's bubble-phase auto-focus on the parent
+                    // [`SidebarMenu`] when the user clicks an item. The parent
+                    // would otherwise capture focus on mouse-down — before the
+                    // click handler runs to update selection — and the active
+                    // item's focus ring would flash on the previously selected
+                    // entry. Tab-key navigation still works because tab stops
+                    // are sourced from the dispatch tree, not mouse events.
+                    .when(parent_focusable && !is_disabled, |this| {
+                        this.on_mouse_down(MouseButton::Left, |_, window, _| {
+                            window.prevent_default();
+                        })
+                    })
                     .when(is_hoverable, |this| {
                         this.hover(|this| {
                             this.bg(cx.theme().sidebar_accent.opacity(0.8))
@@ -272,6 +443,26 @@ impl SidebarItem for SidebarMenuItem {
                         this.font_medium()
                             .bg(cx.theme().sidebar_accent)
                             .text_color(cx.theme().sidebar_accent_foreground)
+                    })
+                    // Focus ring overlay drawn *inside* the item's bounds. We
+                    // can't use [`crate::FocusableExt::focus_ring`] here because
+                    // it positions the ring at negative offsets just outside
+                    // the parent — those pixels get clipped by the
+                    // [`gpui::list`] content mask in `Sidebar::render`. Drawing
+                    // it inset by a pixel keeps the ring fully visible while
+                    // still tracing the rounded item shape.
+                    .when(is_keyboard_focused, |this| {
+                        this.child(
+                            div()
+                                .absolute()
+                                .top_px()
+                                .bottom_px()
+                                .left_px()
+                                .right_px()
+                                .border_1()
+                                .border_color(cx.theme().ring)
+                                .rounded(cx.theme().radius),
+                        )
                     })
                     .when_some(self.icon.clone(), |this, icon| this.child(icon))
                     .when(is_collapsed, |this| {
