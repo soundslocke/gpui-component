@@ -48,45 +48,45 @@ impl SliderStory {
     }
 
     fn new(_: &mut Window, cx: &mut Context<Self>) -> Self {
-        let slider1 = cx.new(|_| {
-            SliderState::new()
+        let slider1 = cx.new(|cx| {
+            SliderState::new(cx)
                 .min(-255.)
                 .max(255.)
                 .default_value(75.)
                 .step(15.)
         });
 
-        let slider2 = cx.new(|_| {
-            SliderState::new()
+        let slider2 = cx.new(|cx| {
+            SliderState::new(cx)
                 .min(0.)
                 .max(5.)
                 .step(1.0)
                 .default_value(2.)
         });
         let slider_hsl = [
-            cx.new(|_| {
-                SliderState::new()
+            cx.new(|cx| {
+                SliderState::new(cx)
                     .min(0.)
                     .max(1.)
                     .step(0.01)
                     .default_value(0.38)
             }),
-            cx.new(|_| {
-                SliderState::new()
+            cx.new(|cx| {
+                SliderState::new(cx)
                     .min(0.)
                     .max(1.)
                     .step(0.01)
                     .default_value(0.5)
             }),
-            cx.new(|_| {
-                SliderState::new()
+            cx.new(|cx| {
+                SliderState::new(cx)
                     .min(0.)
                     .max(1.)
                     .step(0.01)
                     .default_value(0.5)
             }),
-            cx.new(|_| {
-                SliderState::new()
+            cx.new(|cx| {
+                SliderState::new(cx)
                     .min(0.)
                     .max(1.)
                     .step(0.01)
@@ -94,24 +94,24 @@ impl SliderStory {
             }),
         ];
 
-        let slider3 = cx.new(|_| {
-            SliderState::new()
+        let slider3 = cx.new(|cx| {
+            SliderState::new(cx)
                 .min(0.)
                 .max(100.)
                 .default_value(12.0..45.0)
                 .step(1.)
         });
 
-        let slider4 = cx.new(|_| {
-            SliderState::new()
+        let slider4 = cx.new(|cx| {
+            SliderState::new(cx)
                 .min(0.)
                 .max(360.)
                 .default_value(100.0..300.0)
                 .step(1.)
         });
 
-        let slider_logarithmic = cx.new(|_| {
-            SliderState::new()
+        let slider_logarithmic = cx.new(|cx| {
+            SliderState::new(cx)
                 .min(0.25)
                 .max(4.0)
                 .default_value(1.0)

@@ -115,6 +115,7 @@ pub fn init(cx: &mut App) {
     dock::init(cx);
     sheet::init(cx);
     select::init(cx);
+    slider::init(cx);
     input::init(cx);
     list::init(cx);
     dialog::init(cx);

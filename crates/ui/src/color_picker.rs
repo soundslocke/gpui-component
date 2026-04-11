@@ -73,29 +73,29 @@ struct HslaSliders {
 impl HslaSliders {
     fn new(cx: &mut App) -> Self {
         Self {
-            hue: cx.new(|_| {
-                SliderState::new()
+            hue: cx.new(|cx| {
+                SliderState::new(cx)
                     .min(0.)
                     .max(1.)
                     .step(0.01)
                     .default_value(0.)
             }),
-            saturation: cx.new(|_| {
-                SliderState::new()
+            saturation: cx.new(|cx| {
+                SliderState::new(cx)
                     .min(0.)
                     .max(1.)
                     .step(0.01)
                     .default_value(0.)
             }),
-            lightness: cx.new(|_| {
-                SliderState::new()
+            lightness: cx.new(|cx| {
+                SliderState::new(cx)
                     .min(0.)
                     .max(1.)
                     .step(0.01)
                     .default_value(0.)
             }),
-            alpha: cx.new(|_| {
-                SliderState::new()
+            alpha: cx.new(|cx| {
+                SliderState::new(cx)
                     .min(0.)
                     .max(1.)
                     .step(0.01)

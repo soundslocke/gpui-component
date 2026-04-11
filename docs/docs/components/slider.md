@@ -18,8 +18,8 @@ use gpui_component::slider::{Slider, SliderState, SliderEvent, SliderValue};
 ### Basic Slider
 
 ```rust
-let slider_state = cx.new(|_| {
-    SliderState::new()
+let slider_state = cx.new(|cx| {
+    SliderState::new(cx)
         .min(0.0)
         .max(100.0)
         .default_value(50.0)
@@ -39,8 +39,8 @@ struct MyView {
 
 impl MyView {
     fn new(cx: &mut Context<Self>) -> Self {
-        let slider_state = cx.new(|_| {
-            SliderState::new()
+        let slider_state = cx.new(|cx| {
+            SliderState::new(cx)
                 .min(0.0)
                 .max(100.0)
                 .default_value(25.0)
@@ -76,8 +76,8 @@ impl Render for MyView {
 ### Range Slider
 
 ```rust
-let range_slider = cx.new(|_| {
-    SliderState::new()
+let range_slider = cx.new(|cx| {
+    SliderState::new(cx)
         .min(0.0)
         .max(100.0)
         .default_value(20.0..80.0)  // Range from 20 to 80
@@ -99,8 +99,8 @@ Slider::new(&slider_state)
 
 ```rust
 // Integer steps
-let integer_slider = cx.new(|_| {
-    SliderState::new()
+let integer_slider = cx.new(|cx| {
+    SliderState::new(cx)
         .min(0.0)
         .max(10.0)
         .step(1.0)
@@ -108,8 +108,8 @@ let integer_slider = cx.new(|_| {
 });
 
 // Decimal steps
-let decimal_slider = cx.new(|_| {
-    SliderState::new()
+let decimal_slider = cx.new(|cx| {
+    SliderState::new(cx)
         .min(0.0)
         .max(1.0)
         .step(0.01)
@@ -121,8 +121,8 @@ let decimal_slider = cx.new(|_| {
 
 ```rust
 // Temperature slider
-let temp_slider = cx.new(|_| {
-    SliderState::new()
+let temp_slider = cx.new(|cx| {
+    SliderState::new(cx)
         .min(-10.0)
         .max(40.0)
         .default_value(20.0)
@@ -130,8 +130,8 @@ let temp_slider = cx.new(|_| {
 });
 
 // Percentage slider
-let percent_slider = cx.new(|_| {
-    SliderState::new()
+let percent_slider = cx.new(|cx| {
+    SliderState::new(cx)
         .min(0.0)
         .max(100.0)
         .default_value(75.0)
@@ -165,8 +165,8 @@ There have 2 types of scale for the slider:
 The logarithmic scale is useful when the range of values is large and you want to give more precision to smaller values.
 
 ```rust
-let log_slider = cx.new(|_| {
-    SliderState::new()
+let log_slider = cx.new(|cx| {
+    SliderState::new(cx)
         .min(1.0) // min must be greater than 0 for log scale
         .max(1000.0)
         .default_value(10.0)
@@ -231,16 +231,16 @@ struct ColorPicker {
 
 impl ColorPicker {
     fn new(cx: &mut Context<Self>) -> Self {
-        let hue_slider = cx.new(|_| {
-            SliderState::new()
+        let hue_slider = cx.new(|cx| {
+            SliderState::new(cx)
                 .min(0.0)
                 .max(1.0)
                 .step(0.01)
                 .default_value(0.5)
         });
 
-        let saturation_slider = cx.new(|_| {
-            SliderState::new()
+        let saturation_slider = cx.new(|cx| {
+            SliderState::new(cx)
                 .min(0.0)
                 .max(1.0)
                 .step(0.01)
@@ -308,8 +308,8 @@ struct VolumeControl {
 
 impl VolumeControl {
     fn new(cx: &mut Context<Self>) -> Self {
-        let volume_slider = cx.new(|_| {
-            SliderState::new()
+        let volume_slider = cx.new(|cx| {
+            SliderState::new(cx)
                 .min(0.0)
                 .max(100.0)
                 .step(1.0)
@@ -361,8 +361,8 @@ struct PriceFilter {
 
 impl PriceFilter {
     fn new(cx: &mut Context<Self>) -> Self {
-        let price_range = cx.new(|_| {
-            SliderState::new()
+        let price_range = cx.new(|cx| {
+            SliderState::new(cx)
                 .min(0.0)
                 .max(1000.0)
                 .step(10.0)

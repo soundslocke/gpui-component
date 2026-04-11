@@ -1,13 +1,34 @@
 use std::ops::Range;
 
-use crate::{ActiveTheme, AxisExt, ElementExt, StyledExt, h_flex};
+use crate::{
+    ActiveTheme, AxisExt, ElementExt, FocusableExt as _, StyledExt, h_flex,
+    actions::{
+        SelectDown, SelectFirst, SelectLast, SelectLeft, SelectPageDown, SelectPageUp, SelectRight,
+        SelectUp,
+    },
+};
 use gpui::{
     Along, App, AppContext as _, Axis, Background, Bounds, Context, Corners, DefiniteLength,
-    DragMoveEvent, Empty, Entity, EntityId, EventEmitter, Hsla, InteractiveElement, IntoElement,
-    IsZero, MouseButton, MouseDownEvent, ParentElement as _, Pixels, Point, Render, RenderOnce,
-    StatefulInteractiveElement as _, StyleRefinement, Styled, Window, div,
-    prelude::FluentBuilder as _, px, relative,
+    DragMoveEvent, Empty, Entity, EntityId, EventEmitter, FocusHandle, Focusable, Hsla,
+    InteractiveElement, IntoElement, IsZero, KeyBinding, MouseButton, MouseDownEvent,
+    ParentElement as _, Pixels, Point, Render, RenderOnce, StatefulInteractiveElement as _,
+    StyleRefinement, Styled, Window, div, prelude::FluentBuilder as _, px, relative,
 };
+
+const CONTEXT: &str = "Slider";
+
+pub(crate) fn init(cx: &mut App) {
+    cx.bind_keys([
+        KeyBinding::new("left", SelectLeft, Some(CONTEXT)),
+        KeyBinding::new("right", SelectRight, Some(CONTEXT)),
+        KeyBinding::new("up", SelectUp, Some(CONTEXT)),
+        KeyBinding::new("down", SelectDown, Some(CONTEXT)),
+        KeyBinding::new("home", SelectFirst, Some(CONTEXT)),
+        KeyBinding::new("end", SelectLast, Some(CONTEXT)),
+        KeyBinding::new("pageup", SelectPageUp, Some(CONTEXT)),
+        KeyBinding::new("pagedown", SelectPageDown, Some(CONTEXT)),
+    ]);
+}
 
 #[derive(Clone)]
 struct DragThumb((EntityId, bool));
@@ -152,10 +173,10 @@ pub enum SliderScale {
     ///
     /// # For example
     ///
-    /// ```
+    /// ```ignore
     /// use gpui_component::slider::{SliderState, SliderScale};
     ///
-    /// let slider = SliderState::new()
+    /// let slider = SliderState::new(cx)
     ///     .min(1.0)    // Must be > 0 for logarithmic scale
     ///     .max(1000.0)
     ///     .scale(SliderScale::Logarithmic);
@@ -190,11 +211,12 @@ pub struct SliderState {
     /// The bounds of the slider after rendered.
     bounds: Bounds<Pixels>,
     scale: SliderScale,
+    focus_handle: FocusHandle,
 }
 
 impl SliderState {
     /// Create a new [`SliderState`].
-    pub fn new() -> Self {
+    pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
             min: 0.0,
             max: 100.0,
@@ -203,6 +225,7 @@ impl SliderState {
             percentage: (0.0..0.0),
             bounds: Bounds::default(),
             scale: SliderScale::default(),
+            focus_handle: cx.focus_handle(),
         }
     }
 
@@ -341,16 +364,30 @@ impl SliderState {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Match the inset thumb positioning in `Slider::render`: the
+        // thumb's center moves between `THUMB_RADIUS` and
+        // `bar_size - THUMB_RADIUS`, so a click at the bar's left edge
+        // (or anywhere left of `THUMB_RADIUS`) maps to percentage 0,
+        // and a click at the right edge maps to percentage 1.
+        const THUMB_RADIUS: f32 = 8.0;
+        const THUMB_DIAMETER: f32 = 16.0;
         let bounds = self.bounds;
         let step = self.step;
 
-        let inner_pos = if axis.is_horizontal() {
-            position.x - bounds.left()
+        let pos_along: f32 = if axis.is_horizontal() {
+            (position.x - bounds.left()).into()
         } else {
-            bounds.bottom() - position.y
+            (bounds.bottom() - position.y).into()
         };
-        let total_size = bounds.size.along(axis);
-        let percentage = inner_pos.clamp(px(0.), total_size) / total_size;
+        let total_size: f32 = bounds.size.along(axis).into();
+        let inner_size = total_size - THUMB_DIAMETER;
+        let percentage = if inner_size > 0.0 {
+            ((pos_along - THUMB_RADIUS) / inner_size).clamp(0.0, 1.0)
+        } else if total_size > 0.0 {
+            (pos_along / total_size).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
 
         let percentage = if is_start {
             percentage.clamp(0.0, self.percentage.end)
@@ -374,6 +411,114 @@ impl SliderState {
 }
 
 impl EventEmitter<SliderEvent> for SliderState {}
+
+impl Focusable for SliderState {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+impl SliderState {
+    /// Adjust the active thumb's value by `delta`, clamped to the slider's range.
+    /// For range sliders, this currently adjusts the end thumb only.
+    fn adjust_by(&mut self, delta: f32, _: &mut Window, cx: &mut Context<Self>) {
+        let new_value = match self.value {
+            SliderValue::Single(v) => {
+                SliderValue::Single((v + delta).clamp(self.min, self.max))
+            }
+            SliderValue::Range(start, end) => {
+                // TODO: support keyboard navigation between range thumbs.
+                // For now keyboard input always adjusts the end thumb.
+                SliderValue::Range(start, (end + delta).clamp(start, self.max))
+            }
+        };
+        self.value = new_value;
+        self.update_thumb_pos();
+        cx.emit(SliderEvent::Change(self.value));
+        cx.notify();
+    }
+
+    /// Set the active thumb's value to a specific value, clamped to the slider's range.
+    fn set_to(&mut self, value: f32, _: &mut Window, cx: &mut Context<Self>) {
+        let new_value = match self.value {
+            SliderValue::Single(_) => SliderValue::Single(value.clamp(self.min, self.max)),
+            SliderValue::Range(start, _) => {
+                SliderValue::Range(start, value.clamp(start, self.max))
+            }
+        };
+        self.value = new_value;
+        self.update_thumb_pos();
+        cx.emit(SliderEvent::Change(self.value));
+        cx.notify();
+    }
+
+    fn on_select_left(
+        &mut self,
+        _: &SelectLeft,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.adjust_by(-self.step, window, cx);
+    }
+
+    fn on_select_right(
+        &mut self,
+        _: &SelectRight,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.adjust_by(self.step, window, cx);
+    }
+
+    fn on_select_up(&mut self, _: &SelectUp, window: &mut Window, cx: &mut Context<Self>) {
+        self.adjust_by(self.step, window, cx);
+    }
+
+    fn on_select_down(
+        &mut self,
+        _: &SelectDown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.adjust_by(-self.step, window, cx);
+    }
+
+    fn on_select_first(
+        &mut self,
+        _: &SelectFirst,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_to(self.min, window, cx);
+    }
+
+    fn on_select_last(
+        &mut self,
+        _: &SelectLast,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_to(self.max, window, cx);
+    }
+
+    fn on_page_up(
+        &mut self,
+        _: &SelectPageUp,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.adjust_by(self.step * 10.0, window, cx);
+    }
+
+    fn on_page_down(
+        &mut self,
+        _: &SelectPageDown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.adjust_by(-self.step * 10.0, window, cx);
+    }
+}
 
 /// A Slider element.
 #[derive(IntoElement)]
@@ -522,12 +667,62 @@ impl RenderOnce for Slider {
         let state = self.state.read(cx);
         let is_range = state.value().is_range();
         let percentage = state.percentage.clone();
-        let (bar_start, bar_end) = if self.reverse_fill && !is_range {
-            // Fill from thumb to max instead of min to thumb.
-            (relative(percentage.end), relative(0.0))
-        } else {
-            (relative(percentage.start), relative(1. - percentage.end))
+        let focus_handle = state.focus_handle.clone();
+        let is_focused = focus_handle.is_focused(window) && !self.disabled;
+
+        // Inset thumb positioning so the thumb stays inside the bar bounds
+        // at the extremes (instead of spilling 50% past). This matches how
+        // browsers render `<input type="range">`.
+        //
+        // The thumb's center moves linearly between `THUMB_RADIUS` and
+        // `bar_size - THUMB_RADIUS`, rather than `0..bar_size`. The fill
+        // bar is updated to terminate at the thumb center so it stays
+        // visually aligned.
+        //
+        // On the very first render `state.bounds` is the default (zero)
+        // because it's only filled in during prepaint. In that case we
+        // fall back to the original (non-inset) percentage positioning.
+        // The `on_prepaint` handler below calls `cx.notify()` whenever
+        // bounds change, so the next frame uses the correct values.
+        const THUMB_RADIUS: f32 = 8.0;
+        const THUMB_DIAMETER: f32 = 16.0;
+        let bar_size_px: f32 = state.bounds.size.along(axis).into();
+        let inner_size = (bar_size_px - THUMB_DIAMETER).max(0.0);
+        let use_inset = inner_size > 0.0;
+        let thumb_center_at = |p: f32| -> DefiniteLength {
+            if use_inset {
+                px(THUMB_RADIUS + p * inner_size).into()
+            } else {
+                relative(p)
+            }
         };
+
+        let (bar_start, bar_end): (DefiniteLength, DefiniteLength) =
+            if self.reverse_fill && !is_range {
+                // Fill from thumb to max edge.
+                if use_inset {
+                    let center = THUMB_RADIUS + percentage.end * inner_size;
+                    (px(center).into(), px(0.).into())
+                } else {
+                    (relative(percentage.end), relative(0.0))
+                }
+            } else {
+                // Fill from min edge (or start thumb in range mode) to end thumb center.
+                if use_inset {
+                    let start_x = if is_range {
+                        THUMB_RADIUS + percentage.start * inner_size
+                    } else {
+                        0.0
+                    };
+                    let end_center = THUMB_RADIUS + percentage.end * inner_size;
+                    (
+                        px(start_x).into(),
+                        px((bar_size_px - end_center).max(0.0)).into(),
+                    )
+                } else {
+                    (relative(percentage.start), relative(1. - percentage.end))
+                }
+            };
         let rem_size = window.rem_size();
 
         let bar_color = self
@@ -570,6 +765,21 @@ impl RenderOnce for Slider {
 
         div()
             .id(("slider", self.state.entity_id()))
+            .key_context(CONTEXT)
+            .when(!self.disabled, |this| {
+                this.track_focus(&focus_handle.tab_stop(true))
+                    .on_action(window.listener_for(&self.state, SliderState::on_select_left))
+                    .on_action(window.listener_for(&self.state, SliderState::on_select_right))
+                    .on_action(window.listener_for(&self.state, SliderState::on_select_up))
+                    .on_action(window.listener_for(&self.state, SliderState::on_select_down))
+                    .on_action(window.listener_for(&self.state, SliderState::on_select_first))
+                    .on_action(window.listener_for(&self.state, SliderState::on_select_last))
+                    .on_action(window.listener_for(&self.state, SliderState::on_page_up))
+                    .on_action(window.listener_for(&self.state, SliderState::on_page_down))
+            })
+            // `relative()` gives the focus ring (an absolutely-positioned
+            // child added by `focus_ring`) a positioning context.
+            .relative()
             .flex()
             .flex_1()
             .items_center()
@@ -579,6 +789,11 @@ impl RenderOnce for Slider {
             .refine_style(&self.style)
             .bg(cx.theme().transparent)
             .text_color(cx.theme().foreground)
+            // Rounded corners pass through to the focus ring (which reads
+            // the parent's corner_radii) so the ring is a rounded rect
+            // instead of a hard square.
+            .rounded(cx.theme().radius)
+            .focus_ring(is_focused, px(2.), window, cx)
             .child(
                 h_flex()
                     .id("slider-bar-container")
@@ -668,7 +883,7 @@ impl RenderOnce for Slider {
                             })
                             .when(is_range, |this| {
                                 this.child(self.render_thumb(
-                                    relative(percentage.start),
+                                    thumb_center_at(percentage.start),
                                     true,
                                     bar_color,
                                     thumb_color,
@@ -678,7 +893,7 @@ impl RenderOnce for Slider {
                                 ))
                             })
                             .child(self.render_thumb(
-                                relative(percentage.end),
+                                thumb_center_at(percentage.end),
                                 false,
                                 bar_color,
                                 thumb_color,
@@ -688,7 +903,20 @@ impl RenderOnce for Slider {
                             ))
                             .on_prepaint({
                                 let state = self.state.clone();
-                                move |bounds, _, cx| state.update(cx, |r, _| r.bounds = bounds)
+                                move |bounds, _, cx| {
+                                    // Update the cached bar bounds. If they
+                                    // changed, notify so the next render can
+                                    // pick up the correct (inset) thumb
+                                    // positioning. We compare against the
+                                    // current value to avoid spurious
+                                    // re-renders on every frame.
+                                    state.update(cx, |r, cx| {
+                                        if r.bounds != bounds {
+                                            r.bounds = bounds;
+                                            cx.notify();
+                                        }
+                                    })
+                                }
                             }),
                     ),
             )
