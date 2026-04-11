@@ -224,7 +224,21 @@ impl SuggestInputState {
                         list_for_sub.update(cx, |list: &mut ListState<SuggestDelegate>, cx| {
                             list.set_query(&text, window, cx);
                         });
-                        if !this.open {
+                        // Suppress the popup when the input value already
+                        // exactly matches the only filtered item — there's
+                        // nothing useful to show. This also breaks the
+                        // re-open loop after a confirm: confirm sets the
+                        // value (emitting Change), the new value matches
+                        // the now-singleton filter, and we keep the popup
+                        // closed instead of re-opening it.
+                        let matched = &list_for_sub.read(cx).delegate().matched_items;
+                        let redundant =
+                            matched.len() == 1 && matched[0] == *text.as_str();
+                        if redundant {
+                            if this.open {
+                                this.set_open(false, cx);
+                            }
+                        } else if !this.open {
                             this.set_open(true, cx);
                         }
                         cx.notify();
@@ -248,10 +262,37 @@ impl SuggestInputState {
                                     list.set_query(&text, window, cx);
                                 },
                             );
-                            this.set_open(true, cx);
+                            // Don't open if the current value is already an
+                            // exact match for the only filtered item.
+                            let matched = &list_for_sub.read(cx).delegate().matched_items;
+                            let redundant =
+                                matched.len() == 1 && matched[0] == *text.as_str();
+                            if !redundant {
+                                this.set_open(true, cx);
+                            }
                         }
                     }
-                    _ => {}
+                    InputEvent::Blur => {
+                        // Close the popup when the input loses focus (e.g.
+                        // the user pressed Tab or clicked outside). However,
+                        // skip closing if focus moved to the popup list
+                        // itself — that means the user clicked a list item,
+                        // and the list's `confirm` flow will set the input
+                        // value and close the popup. Closing here would
+                        // hide the list before mouse-up arrives, killing
+                        // the click handler.
+                        if !this.open {
+                            return;
+                        }
+                        let list_focused = this
+                            .list
+                            .read(cx)
+                            .focus_handle
+                            .contains_focused(window, cx);
+                        if !list_focused {
+                            this.set_open(false, cx);
+                        }
+                    }
                 }
             },
         ));
