@@ -33,16 +33,16 @@ struct Stroke {
 
 impl BrushStory {
     fn new(_: &mut Window, cx: &mut Context<Self>) -> Self {
-        let brush_size = cx.new(|_| {
-            SliderState::new()
+        let brush_size = cx.new(|cx| {
+            SliderState::new(cx)
                 .min(1.)
                 .max(50.)
                 .default_value(5.)
                 .step(1.)
         });
 
-        let brush_opacity = cx.new(|_| {
-            SliderState::new()
+        let brush_opacity = cx.new(|cx| {
+            SliderState::new(cx)
                 .min(0.1)
                 .max(1.0)
                 .default_value(1.0)

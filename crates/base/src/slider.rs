@@ -10,6 +10,14 @@ use gpui::{
 
 use crate::{element_ext::ElementExt, geometry::AxisExt};
 
+/// The diameter of the slider thumb.
+///
+/// The thumb's center travels between `THUMB_SIZE / 2` and
+/// `track - THUMB_SIZE / 2` so it stays inside the track at both extremes;
+/// [`SliderState::update_value_by_position`] maps pointer positions through
+/// the same inset, so clicking a spot puts the thumb's center there.
+pub const THUMB_SIZE: Pixels = px(16.);
+
 /// Events emitted by the [`SliderState`].
 pub enum SliderEvent {
     /// Emitted continuously while the slider value is being changed by the user.
@@ -351,13 +359,20 @@ impl SliderState {
         let bounds = self.bounds;
         let step = self.step;
 
+        // Positions map onto the thumb's inset travel, not the raw track, so
+        // that a click lands the thumb's center under the pointer.
+        let radius = THUMB_SIZE / 2.;
         let inner_pos = if axis.is_horizontal() {
-            position.x - bounds.left()
+            position.x - bounds.left() - radius
         } else {
-            bounds.bottom() - position.y
+            bounds.bottom() - position.y - radius
         };
-        let total_size = bounds.size.along(axis);
-        let percentage = inner_pos.clamp(px(0.), total_size) / total_size;
+        let total_size = bounds.size.along(axis) - THUMB_SIZE;
+        let percentage = if total_size > px(0.) {
+            inner_pos.clamp(px(0.), total_size) / total_size
+        } else {
+            0.
+        };
 
         let percentage = if is_start {
             percentage.clamp(0.0, self.percentage.end)

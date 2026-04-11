@@ -1,13 +1,22 @@
 use std::sync::Arc;
 
-use crate::{ActiveTheme, AxisExt, StyledExt, ThemeStyled as _};
+use crate::{
+    ActiveTheme, AxisExt, StyledExt, ThemeStyled as _,
+    actions::{
+        SelectDown, SelectFirst, SelectLast, SelectLeft, SelectPageDown, SelectPageUp, SelectRight,
+        SelectUp,
+    },
+};
 pub use gpui_base::slider::{SliderEvent, SliderScale, SliderState, SliderValue};
-use gpui_base::{Slider as BaseSlider, SliderIndicator, SliderThumb, SliderTrack, spring};
+use gpui_base::{
+    Slider as BaseSlider, SliderIndicator, SliderThumb, SliderTrack, Spring, slider::THUMB_SIZE,
+    spring,
+};
 
 use gpui::{
-    App, Axis, Background, Corners, DefiniteLength, ElementId, Entity, EntityId, Hsla,
-    InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Pixels, RenderOnce,
-    StatefulInteractiveElement as _, StyleRefinement, Styled, Window, div,
+    Along as _, App, Axis, Background, Corners, DefiniteLength, ElementId, Entity, EntityId, Hsla,
+    InteractiveElement as _, IntoElement, KeyBinding, MouseButton, ParentElement as _, Pixels,
+    RenderOnce, StatefulInteractiveElement as _, StyleRefinement, Styled, Window, div,
     prelude::FluentBuilder as _, px, relative,
 };
 
@@ -79,6 +88,60 @@ impl ThumbRing {
             });
         }
     }
+}
+
+const CONTEXT: &str = "Slider";
+
+/// How many steps a PageUp/PageDown moves the value.
+const PAGE_STEPS: f32 = 10.;
+
+pub(crate) fn init(cx: &mut App) {
+    cx.bind_keys([
+        KeyBinding::new("left", SelectLeft, Some(CONTEXT)),
+        KeyBinding::new("right", SelectRight, Some(CONTEXT)),
+        KeyBinding::new("up", SelectUp, Some(CONTEXT)),
+        KeyBinding::new("down", SelectDown, Some(CONTEXT)),
+        KeyBinding::new("home", SelectFirst, Some(CONTEXT)),
+        KeyBinding::new("end", SelectLast, Some(CONTEXT)),
+        KeyBinding::new("pageup", SelectPageUp, Some(CONTEXT)),
+        KeyBinding::new("pagedown", SelectPageDown, Some(CONTEXT)),
+    ]);
+}
+
+/// Move the active thumb by `steps` steps, clamped to the slider's range.
+///
+/// Range sliders only move the end thumb; there is no keyboard affordance for
+/// selecting the start thumb yet.
+fn adjust_by_steps(state: &Entity<SliderState>, steps: f32, window: &mut Window, cx: &mut App) {
+    state.update(cx, |state, cx| {
+        let delta = state.step_value() * steps;
+        let value = match state.value() {
+            SliderValue::Single(value) => {
+                SliderValue::Single((value + delta).clamp(state.min_value(), state.max_value()))
+            }
+            SliderValue::Range(start, end) => {
+                SliderValue::Range(start, (end + delta).clamp(start, state.max_value()))
+            }
+        };
+        state.set_value(value, window, cx);
+        cx.emit(SliderEvent::Change(value));
+    });
+}
+
+/// Set the active thumb to `value`, clamped to the slider's range.
+fn set_to(state: &Entity<SliderState>, value: f32, window: &mut Window, cx: &mut App) {
+    state.update(cx, |state, cx| {
+        let value = match state.value() {
+            SliderValue::Single(_) => {
+                SliderValue::Single(value.clamp(state.min_value(), state.max_value()))
+            }
+            SliderValue::Range(start, _) => {
+                SliderValue::Range(start, value.clamp(start, state.max_value()))
+            }
+        };
+        state.set_value(value, window, cx);
+        cx.emit(SliderEvent::Change(value));
+    });
 }
 
 /// A Slider element.
@@ -155,14 +218,69 @@ impl Styled for Slider {
 impl RenderOnce for Slider {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let axis = self.axis;
+        let focus_handle = window
+            .use_keyed_state(
+                ("slider-focus", self.state.entity_id()),
+                cx,
+                |_, cx| cx.focus_handle(),
+            )
+            .read(cx)
+            .clone();
+        let is_focused = focus_handle.is_focused(window) && !self.disabled;
         let state = self.state.read(cx);
         let is_range = state.value().is_range();
         let percentage = state.percentage();
-        let (bar_start, bar_end) = if self.reverse && !is_range {
+
+        // Inset the thumb's travel so it stays inside the track at the
+        // extremes instead of spilling half its width past the end, the way
+        // browsers render `<input type="range">`. The thumb's center moves
+        // between `radius` and `track - radius`, and the fill terminates at
+        // that center so the two stay aligned.
+        //
+        // The track bounds are only known after prepaint, so the first frame
+        // falls back to plain percentage positioning.
+        let thumb_radius: f32 = (THUMB_SIZE / 2.).into();
+        let track_size: f32 = state.bounds().size.along(axis).into();
+        let inner_size = (track_size - f32::from(THUMB_SIZE)).max(0.);
+        let use_inset = inner_size > 0.;
+        let thumb_center_at = |p: f32| -> DefiniteLength {
+            if use_inset {
+                px(thumb_radius + p * inner_size).into()
+            } else {
+                relative(p)
+            }
+        };
+
+        let (bar_start, bar_end): (DefiniteLength, DefiniteLength) = if self.reverse && !is_range {
             // Fill from the thumb to the max end (remaining side).
-            (relative(percentage.end), relative(0.))
+            if use_inset {
+                (
+                    px(thumb_radius + percentage.end * inner_size).into(),
+                    px(0.).into(),
+                )
+            } else {
+                (relative(percentage.end).into(), relative(0.).into())
+            }
         } else {
-            (relative(percentage.start), relative(1. - percentage.end))
+            // Fill from the min edge (or the start thumb, in range mode) to
+            // the end thumb's center.
+            if use_inset {
+                let start = if is_range {
+                    thumb_radius + percentage.start * inner_size
+                } else {
+                    0.
+                };
+                let end_center = thumb_radius + percentage.end * inner_size;
+                (
+                    px(start).into(),
+                    px((track_size - end_center).max(0.)).into(),
+                )
+            } else {
+                (
+                    relative(percentage.start).into(),
+                    relative(1. - percentage.end).into(),
+                )
+            }
         };
         let rem_size = window.rem_size();
 
@@ -268,56 +386,118 @@ impl RenderOnce for Slider {
                 })
         };
 
-        BaseSlider::new(&self.state)
-            .axis(axis)
-            .disabled(self.disabled)
+        // The focusable wrapper carries the keyboard affordances; the base
+        // slider keeps its own pointer handling and layout inside it.
+        div()
+            .id(("slider-focus", self.state.entity_id()))
+            .key_context(CONTEXT)
             .flex()
             .flex_1()
-            .items_center()
-            .justify_center()
             .when(axis.is_vertical(), |this| this.h(px(120.)))
             .when(axis.is_horizontal(), |this| this.w_full())
-            .refine_style(&self.style)
-            .bg(cx.theme().transparent)
-            .text_color(cx.theme().foreground)
+            // `relative()` gives the focus ring, an absolutely positioned
+            // child, a positioning context; the corner radius carries into it
+            // so the ring is a rounded rect around the whole control.
+            .relative()
+            .rounded(cx.theme().radius)
+            .when(is_focused, |this| this.focus_ring_style(window, cx))
+            .when(!self.disabled, |this| {
+                this.track_focus(&focus_handle.tab_stop(true))
+                    .on_action({
+                        let state = self.state.clone();
+                        move |_: &SelectLeft, window, cx| adjust_by_steps(&state, -1., window, cx)
+                    })
+                    .on_action({
+                        let state = self.state.clone();
+                        move |_: &SelectRight, window, cx| adjust_by_steps(&state, 1., window, cx)
+                    })
+                    .on_action({
+                        let state = self.state.clone();
+                        move |_: &SelectUp, window, cx| adjust_by_steps(&state, 1., window, cx)
+                    })
+                    .on_action({
+                        let state = self.state.clone();
+                        move |_: &SelectDown, window, cx| adjust_by_steps(&state, -1., window, cx)
+                    })
+                    .on_action({
+                        let state = self.state.clone();
+                        move |_: &SelectFirst, window, cx| {
+                            let min = state.read(cx).min_value();
+                            set_to(&state, min, window, cx)
+                        }
+                    })
+                    .on_action({
+                        let state = self.state.clone();
+                        move |_: &SelectLast, window, cx| {
+                            let max = state.read(cx).max_value();
+                            set_to(&state, max, window, cx)
+                        }
+                    })
+                    .on_action({
+                        let state = self.state.clone();
+                        move |_: &SelectPageUp, window, cx| {
+                            adjust_by_steps(&state, PAGE_STEPS, window, cx)
+                        }
+                    })
+                    .on_action({
+                        let state = self.state.clone();
+                        move |_: &SelectPageDown, window, cx| {
+                            adjust_by_steps(&state, -PAGE_STEPS, window, cx)
+                        }
+                    })
+            })
             .child(
-                SliderTrack::new(&self.state)
+                BaseSlider::new(&self.state)
                     .axis(axis)
                     .disabled(self.disabled)
                     .flex()
-                    .when(axis.is_horizontal(), |this| {
-                        this.items_center().h_6().w_full()
-                    })
-                    .when(axis.is_vertical(), |this| {
-                        this.justify_center().w_6().h_full()
-                    })
-                    .flex_shrink_0()
+                    .flex_1()
+                    .items_center()
+                    .justify_center()
+                    .when(axis.is_vertical(), |this| this.h(px(120.)))
+                    .when(axis.is_horizontal(), |this| this.w_full())
+                    .refine_style(&self.style)
+                    .bg(cx.theme().transparent)
+                    .text_color(cx.theme().foreground)
                     .child(
-                        SliderIndicator::new(&self.state)
-                            .relative()
-                            .when(axis.is_horizontal(), |this| this.w_full().h_1p5())
-                            .when(axis.is_vertical(), |this| this.h_full().w_1p5())
-                            .bg(bar_color.opacity(0.2))
-                            .active(|this| this.bg(bar_color.opacity(0.4)))
-                            .corner_radii(radius)
-                            .when(self.show_fill, |this| {
-                                this.child(
-                                    div()
-                                        .absolute()
-                                        .when(axis.is_horizontal(), |this| {
-                                            this.h_full().left(bar_start).right(bar_end)
-                                        })
-                                        .when(axis.is_vertical(), |this| {
-                                            this.w_full().bottom(bar_start).top(bar_end)
-                                        })
-                                        .bg(bar_color)
-                                        .rounded_full_style(cx),
-                                )
+                        SliderTrack::new(&self.state)
+                            .axis(axis)
+                            .disabled(self.disabled)
+                            .flex()
+                            .when(axis.is_horizontal(), |this| {
+                                this.items_center().h_6().w_full()
                             })
-                            .when_some(start_ring, |this, ring| {
-                                this.child(thumb(relative(percentage.start), true, ring))
+                            .when(axis.is_vertical(), |this| {
+                                this.justify_center().w_6().h_full()
                             })
-                            .child(thumb(relative(percentage.end), false, end_ring)),
+                            .flex_shrink_0()
+                            .child(
+                                SliderIndicator::new(&self.state)
+                                    .relative()
+                                    .when(axis.is_horizontal(), |this| this.w_full().h_1p5())
+                                    .when(axis.is_vertical(), |this| this.h_full().w_1p5())
+                                    .bg(bar_color.opacity(0.2))
+                                    .active(|this| this.bg(bar_color.opacity(0.4)))
+                                    .corner_radii(radius)
+                                    .when(self.show_fill, |this| {
+                                        this.child(
+                                            div()
+                                                .absolute()
+                                                .when(axis.is_horizontal(), |this| {
+                                                    this.h_full().left(bar_start).right(bar_end)
+                                                })
+                                                .when(axis.is_vertical(), |this| {
+                                                    this.w_full().bottom(bar_start).top(bar_end)
+                                                })
+                                                .bg(bar_color)
+                                                .rounded_full_style(cx),
+                                        )
+                                    })
+                                    .when_some(start_ring, |this, ring| {
+                                        this.child(thumb(thumb_center_at(percentage.start), true, ring))
+                                    })
+                                    .child(thumb(thumb_center_at(percentage.end), false, end_ring)),
+                            ),
                     ),
             )
     }
