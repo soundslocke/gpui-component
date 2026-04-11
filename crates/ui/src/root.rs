@@ -2,6 +2,7 @@ use crate::{
     ActiveTheme, Anchor, ElementExt, Placement, StyledExt,
     dialog::{ANIMATION_DURATION, Dialog},
     focus_trap::FocusTrapManager,
+    global_state::GlobalState,
     input::InputState,
     notification::{Notification, NotificationList},
     sheet::Sheet,
@@ -475,6 +476,27 @@ impl Styled for Root {
 
 impl Render for Root {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Focus trap: if a dialog is active and focus has escaped, force it back.
+        // This runs every render as a reliable safety net.
+        //
+        // Skip this check while a deferred popover (Select dropdown, Popover, etc.)
+        // is open. Deferred popovers are rendered after our check runs, so the
+        // popover's elements may not yet be in the dispatch tree — `contains_focused`
+        // would incorrectly report them as outside the dialog and we'd steal focus
+        // from the popover. The popover manages its own focus while open.
+        if let Some(active_dialog) = self.active_dialogs.last() {
+            if !GlobalState::global(cx).is_in_deferred_context() {
+                let fh = &active_dialog.focus_handle;
+                if !fh.is_focused(window) && !fh.contains_focused(window, cx) {
+                    fh.focus(window, cx);
+                    window.focus_next(cx);
+                    if !fh.contains_focused(window, cx) {
+                        fh.focus(window, cx);
+                    }
+                }
+            }
+        }
+
         window.set_rem_size(cx.theme().font_size);
 
         window_border().shadow_size(self.window_shadow_size).child(

@@ -14,6 +14,7 @@ use crate::{
     animation::cubic_bezier,
     button::{Button, ButtonVariant, ButtonVariants as _},
     dialog::{DialogContent, DialogTitle},
+    root::{Tab, TabPrev},
     scroll::ScrollableElement as _,
     v_flex,
 };
@@ -27,6 +28,8 @@ pub(crate) fn init(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("escape", CancelDialog, Some(CONTEXT)),
         KeyBinding::new("enter", ConfirmDialog, Some(CONTEXT)),
+        KeyBinding::new("tab", Tab, Some(CONTEXT)),
+        KeyBinding::new("shift-tab", TabPrev, Some(CONTEXT)),
     ]);
 }
 
@@ -435,6 +438,48 @@ impl Dialog {
     }
 }
 
+impl Dialog {
+    /// Navigate to the next tab stop within the dialog's focus trap.
+    /// If focus would escape the container, cycle back to the first tab stop inside.
+    fn focus_trap_next(focus_handle: &FocusHandle, window: &mut Window, cx: &mut App) {
+        window.focus_next(cx);
+        if !focus_handle.contains_focused(window, cx) {
+            let escaped_to = window.focused(cx);
+            let mut attempts = 0;
+            while !focus_handle.contains_focused(window, cx) && attempts < 100 {
+                window.focus_next(cx);
+                attempts += 1;
+                if window.focused(cx) == escaped_to {
+                    break;
+                }
+            }
+            if !focus_handle.contains_focused(window, cx) {
+                focus_handle.focus(window, cx);
+            }
+        }
+    }
+
+    /// Navigate to the previous tab stop within the dialog's focus trap.
+    /// If focus would escape the container, cycle back to the last tab stop inside.
+    fn focus_trap_prev(focus_handle: &FocusHandle, window: &mut Window, cx: &mut App) {
+        window.focus_prev(cx);
+        if !focus_handle.contains_focused(window, cx) {
+            let escaped_to = window.focused(cx);
+            let mut attempts = 0;
+            while !focus_handle.contains_focused(window, cx) && attempts < 100 {
+                window.focus_prev(cx);
+                attempts += 1;
+                if window.focused(cx) == escaped_to {
+                    break;
+                }
+            }
+            if !focus_handle.contains_focused(window, cx) {
+                focus_handle.focus(window, cx);
+            }
+        }
+    }
+}
+
 impl RenderOnce for Dialog {
     fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         if let Some(trigger) = self.trigger.take() {
@@ -559,6 +604,20 @@ impl RenderOnce for Dialog {
                                             Self::defer_close_dialog(window, cx);
                                             on_close(&ClickEvent::default(), window, cx);
                                         }
+                                    }
+                                })
+                                .on_action({
+                                    let focus_handle = self.focus_handle.clone();
+                                    move |_: &Tab, window, cx| {
+                                        Self::focus_trap_next(&focus_handle, window, cx);
+                                        cx.stop_propagation();
+                                    }
+                                })
+                                .on_action({
+                                    let focus_handle = self.focus_handle.clone();
+                                    move |_: &TabPrev, window, cx| {
+                                        Self::focus_trap_prev(&focus_handle, window, cx);
+                                        cx.stop_propagation();
                                     }
                                 })
                             })
