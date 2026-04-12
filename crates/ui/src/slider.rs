@@ -668,7 +668,12 @@ impl RenderOnce for Slider {
         let is_range = state.value().is_range();
         let percentage = state.percentage.clone();
         let focus_handle = state.focus_handle.clone();
-        let is_focused = focus_handle.is_focused(window) && !self.disabled;
+        // Only show the focus ring when focus arrived via keyboard navigation
+        // (Tab / arrows). Mirrors CSS `:focus-visible` so mouse clicks and
+        // drags don't paint a ring around the slider.
+        let is_focused = focus_handle.is_focused(window)
+            && window.last_input_was_keyboard()
+            && !self.disabled;
 
         // Inset thumb positioning so the thumb stays inside the bar bounds
         // at the extremes (instead of spilling 50% past). This matches how
