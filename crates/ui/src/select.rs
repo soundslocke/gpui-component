@@ -4,8 +4,8 @@ use gpui::{
     AnyElement, App, AppContext, Bounds, ClickEvent, Context, DismissEvent, Edges, ElementId,
     Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyBinding,
     Length, ParentElement, Pixels, Render, RenderOnce, SharedString, StatefulInteractiveElement,
-    StyleRefinement, Styled, Subscription, Task, WeakEntity, Window, anchored, deferred, div,
-    prelude::FluentBuilder, px, rems,
+    StyleRefinement, Styled, Subscription, Task, WeakEntity, Window, actions, anchored, deferred,
+    div, prelude::FluentBuilder, px, rems,
 };
 use rust_i18n::t;
 
@@ -20,18 +20,28 @@ use crate::{
     v_flex,
 };
 
+// `tab` and `shift-tab` are claimed in the Select context so the Select can
+// implement "commit current selection then advance focus" while the dropdown
+// menu is open. When the menu is closed, the handler dispatches the regular
+// `Tab`/`TabPrev` actions back through Root so the standard focus-trap aware
+// navigation runs unchanged.
+actions!(select, [SelectTab, SelectTabPrev]);
+
 const CONTEXT: &str = "Select";
 pub(crate) fn init(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("up", SelectUp, Some(CONTEXT)),
         KeyBinding::new("down", SelectDown, Some(CONTEXT)),
         KeyBinding::new("enter", Confirm { secondary: false }, Some(CONTEXT)),
+        KeyBinding::new("space", Confirm { secondary: false }, Some(CONTEXT)),
         KeyBinding::new(
             "secondary-enter",
             Confirm { secondary: true },
             Some(CONTEXT),
         ),
         KeyBinding::new("escape", Cancel, Some(CONTEXT)),
+        KeyBinding::new("tab", SelectTab, Some(CONTEXT)),
+        KeyBinding::new("shift-tab", SelectTabPrev, Some(CONTEXT)),
     ])
 }
 
@@ -705,9 +715,11 @@ where
     }
 
     fn enter(&mut self, _: &Confirm, window: &mut Window, cx: &mut Context<Self>) {
-        // Propagate the event to the parent view, for example to the Dialog to support ENTER to confirm.
-        cx.propagate();
-
+        // Activating a focused Select trigger should open the dropdown and
+        // consume the event. Do NOT propagate, otherwise an enclosing element
+        // (e.g. a Dialog whose primary action is bound to Enter) would also
+        // fire on the same keypress and, for example, close the dialog out
+        // from under the user.
         if !self.open {
             self.set_open(true, cx);
             cx.notify();
@@ -733,6 +745,64 @@ where
         }
 
         self.cancel_and_close(window, cx);
+    }
+
+    /// Tab handler bound in the Select context. When the menu is open, commits
+    /// the highlighted item, closes the menu, and advances focus to the next
+    /// element. When the menu is closed, re-dispatches the standard `Tab`
+    /// action so Root's focus-trap-aware navigation runs unchanged.
+    fn select_tab(&mut self, _: &SelectTab, window: &mut Window, cx: &mut Context<Self>) {
+        self.tab_navigate(false, window, cx);
+    }
+
+    fn select_tab_prev(
+        &mut self,
+        _: &SelectTabPrev,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.tab_navigate(true, window, cx);
+    }
+
+    fn tab_navigate(&mut self, backwards: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.open {
+            // Closed: defer to Root's normal Tab handling so focus traps work.
+            let action: Box<dyn gpui::Action> = if backwards {
+                Box::new(crate::root::TabPrev)
+            } else {
+                Box::new(crate::root::Tab)
+            };
+            window.dispatch_action(action, cx);
+            return;
+        }
+
+        // Open: confirm any current highlight (no-op if nothing is selected),
+        // then force-close the menu and put focus back on the trigger so the
+        // state is consistent. `confirm_selection` schedules its own deferred
+        // close which would otherwise restore focus to the trigger after we
+        // moved it; by also setting `open=false` and re-focusing the trigger
+        // inline here we make the close idempotent.
+        self.list.update(cx, |list, cx| {
+            list.confirm_selection(window, cx);
+        });
+        self.set_open(false, cx);
+        self.focus(window, cx);
+
+        // Schedule the focus advancement *after* the current effect cycle so
+        // it runs after `confirm_selection`'s deferred close-and-restore-focus
+        // (queued first). Going through `crate::root::Tab` here keeps the
+        // dialog focus trap behaviour intact.
+        let window_handle = window.window_handle();
+        cx.defer(move |cx| {
+            let _ = window_handle.update(cx, |_, window, cx| {
+                let action: Box<dyn gpui::Action> = if backwards {
+                    Box::new(crate::root::TabPrev)
+                } else {
+                    Box::new(crate::root::Tab)
+                };
+                window.dispatch_action(action, cx);
+            });
+        });
     }
 
     /// Close the dropdown and restore the previously confirmed selection.
@@ -1063,7 +1133,15 @@ where
 {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let disabled = self.options.disabled;
-        let focus_handle = self.state.focus_handle(cx);
+        // Always track the trigger's focus handle on the outer Select div, never
+        // the list/query handle. The Focusable impl returns the list handle while
+        // the menu is open, but using that here is unsafe: when an ancestor view
+        // re-uses its cached prepaint (because only `SelectState` was marked
+        // dirty), the cached outer div replays a `track_focus(list_handle)` that
+        // points at an element no longer in the dispatch tree, while the trigger
+        // handle ends up in no `tab_stops` entry at all — leaving keyboard focus
+        // stranded after the user confirms or cancels the menu.
+        let focus_handle = self.state.read(cx).focus_handle.clone();
         // If the size has change, set size to self.list, to change the QueryInput size.
         self.state.update(cx, |this, _| {
             this.options = self.options;
@@ -1079,6 +1157,8 @@ where
             .on_action(window.listener_for(&self.state, SelectState::down))
             .on_action(window.listener_for(&self.state, SelectState::enter))
             .on_action(window.listener_for(&self.state, SelectState::escape))
+            .on_action(window.listener_for(&self.state, SelectState::select_tab))
+            .on_action(window.listener_for(&self.state, SelectState::select_tab_prev))
             .child(self.state)
     }
 }
