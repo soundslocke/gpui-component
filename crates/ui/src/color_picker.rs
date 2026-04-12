@@ -333,6 +333,7 @@ pub struct ColorPicker {
     style: StyleRefinement,
     state: Entity<ColorPickerState>,
     featured_colors: Option<Vec<Hsla>>,
+    color_palettes: Option<Vec<Vec<Hsla>>>,
     label: Option<SharedString>,
     icon: Option<Icon>,
     size: Size,
@@ -347,6 +348,7 @@ impl ColorPicker {
             style: StyleRefinement::default(),
             state: state.clone(),
             featured_colors: None,
+            color_palettes: None,
             size: Size::Medium,
             label: None,
             icon: None,
@@ -360,6 +362,15 @@ impl ColorPicker {
     /// for example provided user's last used colors.
     pub fn featured_colors(mut self, colors: Vec<Hsla>) -> Self {
         self.featured_colors = Some(colors);
+        self
+    }
+
+    /// Override the grid of color palette swatches displayed in the picker
+    /// (the rows below the featured colors). Each inner `Vec<Hsla>` is one
+    /// palette ramp rendered as a row, lightest to darkest. Defaults to the
+    /// gpui-component built-in Tailwind palettes when unset.
+    pub fn color_palettes(mut self, palettes: Vec<Vec<Hsla>>) -> Self {
+        self.color_palettes = Some(palettes);
         self
     }
 
@@ -504,6 +515,8 @@ impl ColorPicker {
             cx.theme().magenta_light,
         ]);
 
+        let palettes = self.color_palettes.clone().unwrap_or_else(color_palettes);
+
         v_flex()
             .gap_3()
             .child(
@@ -515,16 +528,14 @@ impl ColorPicker {
             )
             .child(Divider::horizontal())
             .child(
-                v_flex()
-                    .gap_1()
-                    .children(color_palettes().iter().map(|sub_colors| {
-                        h_flex().gap_1().children(
-                            sub_colors
-                                .iter()
-                                .rev()
-                                .map(|color| self.render_item(*color, true, window, cx)),
-                        )
-                    })),
+                v_flex().gap_1().children(palettes.iter().map(|sub_colors| {
+                    h_flex().gap_1().children(
+                        sub_colors
+                            .iter()
+                            .rev()
+                            .map(|color| self.render_item(*color, true, window, cx)),
+                    )
+                })),
             )
     }
 
@@ -764,7 +775,23 @@ impl RenderOnce for ColorPicker {
                     .open(state.open)
                     .w_72()
                     .on_open_change(
-                        window.listener_for(&self.state, |this, open: &bool, _, cx| {
+                        window.listener_for(&self.state, |this, open: &bool, window, cx| {
+                            // When the popover closes without a commit, drop
+                            // any pending hover preview so the next open shows
+                            // the actually-selected color rather than whatever
+                            // swatch the cursor last passed over. The hex input
+                            // also caches the last-hovered swatch, so reset it
+                            // to the committed value (or empty when unset),
+                            // suppressing the resulting Change event so it
+                            // doesn't immediately re-sync `hovered_color`.
+                            if !*open {
+                                this.hovered_color = this.value;
+                                this.suppress_input_change = true;
+                                let hex = this.value.map(|v| v.to_hex()).unwrap_or_default();
+                                this.state.update(cx, |input, cx| {
+                                    input.set_value(hex, window, cx);
+                                });
+                            }
                             this.open = *open;
                             cx.notify();
                         }),
