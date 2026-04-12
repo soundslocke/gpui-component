@@ -55,6 +55,7 @@ pub struct ColorPicker {
     style: StyleRefinement,
     state: Entity<ColorPickerState>,
     featured_colors: Option<Vec<Hsla>>,
+    color_palettes: Option<Vec<Vec<Hsla>>>,
     label: Option<SharedString>,
     /// The announced name, when the visible label is not it.
     accessibility_label: Option<SharedString>,
@@ -71,6 +72,7 @@ impl ColorPicker {
             style: StyleRefinement::default(),
             state: state.clone(),
             featured_colors: None,
+            color_palettes: None,
             size: Size::Medium,
             label: None,
             accessibility_label: None,
@@ -85,6 +87,15 @@ impl ColorPicker {
     /// for example provided user's last used colors.
     pub fn featured_colors(mut self, colors: Vec<Hsla>) -> Self {
         self.featured_colors = Some(colors);
+        self
+    }
+
+    /// Override the grid of color palette swatches displayed in the picker
+    /// (the rows below the featured colors). Each inner `Vec<Hsla>` is one
+    /// palette ramp rendered as a row, lightest to darkest. Defaults to the
+    /// gpui-component built-in Tailwind palettes when unset.
+    pub fn color_palettes(mut self, palettes: Vec<Vec<Hsla>>) -> Self {
+        self.color_palettes = Some(palettes);
         self
     }
 
@@ -219,6 +230,8 @@ impl ColorPicker {
             cx.theme().magenta_light,
         ]);
 
+        let palettes = self.color_palettes.clone().unwrap_or_else(color_palettes);
+
         v_flex()
             .gap_3()
             .child(
@@ -232,7 +245,7 @@ impl ColorPicker {
             .child(
                 v_flex()
                     .gap_1()
-                    .children(color_palettes().iter().map(|sub_colors| {
+                    .children(palettes.iter().map(|sub_colors| {
                         h_flex().gap_1().children(
                             sub_colors
                                 .iter()
@@ -489,8 +502,17 @@ impl RenderOnce for ColorPicker {
                 Popover::new("popover")
                     .open(open)
                     .w_72()
-                    .on_open_change(move |open: &bool, _, cx| {
-                        popover_state.update(cx, |state, cx| state.set_open(*open, cx));
+                    .on_open_change(move |open: &bool, window, cx| {
+                        popover_state.update(cx, |state, cx| {
+                            // Closing without a commit drops the pending hover
+                            // preview, so the next open shows the selected
+                            // color rather than whatever swatch the cursor
+                            // last passed over.
+                            if !*open {
+                                state.clear_preview(window, cx);
+                            }
+                            state.set_open(*open, cx);
+                        });
                     })
                     .trigger(ColorPickerButton {
                         id: "trigger".into(),
