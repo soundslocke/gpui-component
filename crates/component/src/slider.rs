@@ -226,7 +226,11 @@ impl RenderOnce for Slider {
             )
             .read(cx)
             .clone();
-        let is_focused = focus_handle.is_focused(window) && !self.disabled;
+        // Only show the focus ring when focus arrived via keyboard navigation
+        // (Tab / arrows). Mirrors CSS `:focus-visible` so mouse clicks and
+        // drags don't paint a ring around the slider.
+        let is_focused =
+            focus_handle.is_focused(window) && window.last_input_was_keyboard() && !self.disabled;
         let state = self.state.read(cx);
         let is_range = state.value().is_range();
         let percentage = state.percentage();
