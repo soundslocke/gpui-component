@@ -1,9 +1,14 @@
 use gpui::{
-    AnyElement, App, FocusHandle, InteractiveElement as _, IntoElement, MouseButton, ParentElement,
-    RenderOnce, StatefulInteractiveElement, StyleRefinement, Styled, Window, div, relative,
+    AnyElement, App, FocusHandle, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton,
+    ParentElement, RenderOnce, StatefulInteractiveElement, StyleRefinement, Styled, Window, div,
+    relative,
 };
 
-use crate::{ActiveTheme as _, StyledExt as _, dialog::Confirm, h_flex};
+use crate::{
+    ActiveTheme as _, StyledExt as _,
+    dialog::{Cancel, Confirm},
+    h_flex,
+};
 
 /// Footer section of a dialog, typically contains action buttons.
 ///
@@ -109,6 +114,16 @@ impl RenderOnce for DialogClose {
                     window.focus(&focus_handle, cx);
                 }
             })
+            // Forward Enter/Space bubbling up from the wrapped Button (which
+            // is tab-focused but has no `on_click` of its own, so GPUI's
+            // click synthesis doesn't fire on it).
+            .on_key_down(
+                move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
+                    if event.keystroke.key == "enter" || event.keystroke.key == "space" {
+                        window.dispatch_action(Box::new(Cancel), cx);
+                    }
+                },
+            )
             .child(self.base)
     }
 }
@@ -149,6 +164,16 @@ impl RenderOnce for DialogAction {
             .on_click(move |_, window, cx| {
                 window.dispatch_action(Box::new(Confirm { secondary: false }), cx)
             })
+            // Forward Enter/Space bubbling up from the wrapped Button (which
+            // is tab-focused but has no `on_click` of its own, so GPUI's
+            // click synthesis doesn't fire on it).
+            .on_key_down(
+                move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
+                    if event.keystroke.key == "enter" || event.keystroke.key == "space" {
+                        window.dispatch_action(Box::new(Confirm { secondary: false }), cx);
+                    }
+                },
+            )
             .children(self.children)
     }
 }

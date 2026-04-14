@@ -88,7 +88,11 @@ fn request_open_change(
 pub fn init(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("escape", Cancel, Some(CONTEXT)),
-        KeyBinding::new("enter", Confirm { secondary: false }, Some(CONTEXT)),
+        // No "enter -> Confirm" binding: Enter on any focusable descendant
+        // would confirm the dialog regardless of what is focused. Instead we
+        // rely on GPUI's Enter/Space click synthesis, so the primary action
+        // button dispatches Confirm when it is the focused element and Enter
+        // activates whatever else has focus otherwise.
     ]);
 }
 
