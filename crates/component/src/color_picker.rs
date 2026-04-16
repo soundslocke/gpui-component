@@ -135,15 +135,14 @@ impl ColorPicker {
         self
     }
 
-    fn render_item(&self, color: Hsla, cx: &mut App) -> ColorSwatch {
+    fn render_item(&self, id: impl Into<ElementId>, color: Hsla, cx: &mut App) -> ColorSwatch {
         let selected = self.state.read(cx).value() == Some(color);
         let hover_state = self.state.clone();
         let click_state = self.state.clone();
 
-        ColorSwatch::new(
-            SharedString::from(format!("color-{}", color.to_hex())),
-            color,
-        )
+        // Keyed by position rather than by hex: a color repeated in the
+        // featured row and a palette row would otherwise collide on element id.
+        ColorSwatch::new(id, color)
         .selected(selected)
         .h_5()
         .w_5()
@@ -186,26 +185,10 @@ impl ColorPicker {
         v_flex()
             .p_0p5()
             .gap_3()
-            // Stop Enter/Confirm from bubbling past the popover. The Input
-            // inside the popover handles Enter locally (commits the hex value
-            // and closes the popover), but GPUI's single-line input calls
-            // `cx.propagate()` on Confirm — and the popover's content is
-            // reparented to the overlay layer, so the `on_action` on the
-            // trigger wrapper is bypassed. Without intercepting Confirm here,
-            // the action reaches outer handlers (e.g. a surrounding Dialog's
-            // confirm, which then forwards Enter to the first focusable
-            // element — often a destructive icon button).
-            .key_context(CONTEXT)
-            .on_action(
-                window.listener_for(&self.state, |_state, _: &Confirm, _, cx| {
-                    // The InputEvent::PressEnter subscriber already handles the
-                    // commit + deferred close. We only need to be on the focus
-                    // ancestor chain here to swallow the bubbling Confirm
-                    // action so it doesn't reach outer handlers (e.g. a
-                    // surrounding Dialog's confirm binding).
-                    cx.notify();
-                }),
-            )
+            // Keep Enter inside the popover: the hex Input commits and closes
+            // on Enter itself, and the popover content is reparented to the
+            // overlay layer, so a bubbling Enter would otherwise reach outer
+            // handlers such as a surrounding Dialog's confirm.
             .on_key_down(|ev: &gpui::KeyDownEvent, _, cx| {
                 if ev.keystroke.key == "enter" {
                     cx.stop_propagation();
@@ -270,19 +253,20 @@ impl ColorPicker {
                 h_flex().gap_1().children(
                     featured_colors
                         .iter()
-                        .map(|color| self.render_item(*color, cx)),
+                        .enumerate()
+                        .map(|(ix, color)| self.render_item(("featured", ix), *color, cx)),
                 ),
             )
             .child(Separator::horizontal())
             .child(
                 v_flex()
                     .gap_1()
-                    .children(palettes.iter().map(|sub_colors| {
+                    .children(palettes.iter().enumerate().map(|(row, sub_colors)| {
+                        let len = sub_colors.len();
                         h_flex().gap_1().children(
-                            sub_colors
-                                .iter()
-                                .rev()
-                                .map(|color| self.render_item(*color, cx)),
+                            sub_colors.iter().rev().enumerate().map(|(col, color)| {
+                                self.render_item(("palette", row * len + col), *color, cx)
+                            }),
                         )
                     })),
             )
