@@ -153,9 +153,16 @@ impl ColorPicker {
         .hover(|this| this.border_color(color.darken(0.3)).bg(color.lighten(0.1)))
         .active(|this| this.border_color(color.darken(0.5)).bg(color.darken(0.2)))
         .on_hover(move |color, entered, window, cx| {
-            if entered {
-                hover_state.update(cx, |state, cx| state.preview_color(color, window, cx));
-            }
+            hover_state.update(cx, |state, cx| {
+                if entered {
+                    state.preview_color(color, window, cx);
+                } else {
+                    // Restore the committed color when the cursor leaves, so
+                    // the hex field and swatch don't stay stuck on whichever
+                    // swatch was hovered last.
+                    state.clear_preview(window, cx);
+                }
+            });
         })
         .on_click(move |color, _, window, cx| {
             click_state.update(cx, |state, cx| state.select_color(color, window, cx));
@@ -179,6 +186,31 @@ impl ColorPicker {
         v_flex()
             .p_0p5()
             .gap_3()
+            // Stop Enter/Confirm from bubbling past the popover. The Input
+            // inside the popover handles Enter locally (commits the hex value
+            // and closes the popover), but GPUI's single-line input calls
+            // `cx.propagate()` on Confirm — and the popover's content is
+            // reparented to the overlay layer, so the `on_action` on the
+            // trigger wrapper is bypassed. Without intercepting Confirm here,
+            // the action reaches outer handlers (e.g. a surrounding Dialog's
+            // confirm, which then forwards Enter to the first focusable
+            // element — often a destructive icon button).
+            .key_context(CONTEXT)
+            .on_action(
+                window.listener_for(&self.state, |_state, _: &Confirm, _, cx| {
+                    // The InputEvent::PressEnter subscriber already handles the
+                    // commit + deferred close. We only need to be on the focus
+                    // ancestor chain here to swallow the bubbling Confirm
+                    // action so it doesn't reach outer handlers (e.g. a
+                    // surrounding Dialog's confirm binding).
+                    cx.notify();
+                }),
+            )
+            .on_key_down(|ev: &gpui::KeyDownEvent, _, cx| {
+                if ev.keystroke.key == "enter" {
+                    cx.stop_propagation();
+                }
+            })
             .child(
                 TabBar::new("mode")
                     .segmented()

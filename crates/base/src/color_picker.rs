@@ -213,7 +213,19 @@ impl ColorPickerState {
                 }
                 InputEvent::PressEnter { .. } => {
                     let value = input.read(cx).value();
-                    this.commit_hex(value.as_str(), window, cx);
+                    let Some(color) = parse_hex(value.as_str()) else {
+                        return;
+                    };
+                    this.update_color(color, window, cx);
+                    // Commit now but close on the next cycle: closing here
+                    // moves focus while the Enter keyup is still in flight,
+                    // which then synth-clicks whatever gained focus.
+                    let picker = cx.entity();
+                    let focus_handle = this.focus_handle.clone();
+                    window.defer(cx, move |window, cx| {
+                        picker.update(cx, |this, cx| this.set_open(false, cx));
+                        focus_handle.focus(window, cx);
+                    });
                 }
                 _ => {}
             },

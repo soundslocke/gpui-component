@@ -269,21 +269,24 @@ impl Colorize for Hsla {
     fn to_hex(&self) -> String {
         let rgb = self.to_rgb();
 
+        // Round rather than truncate: the Hsla→Rgb round-trip can land just
+        // below an integer (e.g. 18.9999… from 19/255), and `as u32` truncates
+        // those toward zero, shifting the displayed hex down by one step.
         if rgb.a < 1. {
             return format!(
                 "#{:02X}{:02X}{:02X}{:02X}",
-                ((rgb.r * 255.) as u32),
-                ((rgb.g * 255.) as u32),
-                ((rgb.b * 255.) as u32),
-                ((self.a * 255.) as u32)
+                ((rgb.r * 255.).round() as u32),
+                ((rgb.g * 255.).round() as u32),
+                ((rgb.b * 255.).round() as u32),
+                ((self.a * 255.).round() as u32)
             );
         }
 
         format!(
             "#{:02X}{:02X}{:02X}",
-            ((rgb.r * 255.) as u32),
-            ((rgb.g * 255.) as u32),
-            ((rgb.b * 255.) as u32)
+            ((rgb.r * 255.).round() as u32),
+            ((rgb.g * 255.).round() as u32),
+            ((rgb.b * 255.).round() as u32)
         )
     }
 
