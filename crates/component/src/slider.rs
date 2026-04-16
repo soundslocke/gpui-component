@@ -14,7 +14,7 @@ use gpui_base::{
 };
 
 use gpui::{
-    Along as _, App, Axis, Background, Corners, DefiniteLength, ElementId, Entity, EntityId, Hsla,
+    App, Axis, Background, Corners, DefiniteLength, ElementId, Entity, EntityId, Hsla,
     InteractiveElement as _, IntoElement, KeyBinding, MouseButton, ParentElement as _, Pixels,
     RenderOnce, StatefulInteractiveElement as _, StyleRefinement, Styled, Window, div,
     prelude::FluentBuilder as _, px, relative,
@@ -237,54 +237,31 @@ impl RenderOnce for Slider {
 
         // Inset the thumb's travel so it stays inside the track at the
         // extremes instead of spilling half its width past the end, the way
-        // browsers render `<input type="range">`. The thumb's center moves
-        // between `radius` and `track - radius`, and the fill terminates at
-        // that center so the two stay aligned.
+        // browsers render `<input type="range">`.
         //
-        // The track bounds are only known after prepaint, so the first frame
-        // falls back to plain percentage positioning.
-        let thumb_radius: f32 = (THUMB_SIZE / 2.).into();
-        let track_size: f32 = state.bounds().size.along(axis).into();
-        let inner_size = (track_size - f32::from(THUMB_SIZE)).max(0.);
-        let use_inset = inner_size > 0.;
-        let thumb_center_at = |p: f32| -> DefiniteLength {
-            if use_inset {
-                px(thumb_radius + p * inner_size).into()
-            } else {
-                relative(p)
-            }
-        };
+        // The clamping is pure layout: the thumbs and fill edges live in a
+        // track container inset by one thumb radius at each end of the axis,
+        // and are then placed with `relative(p)` plus a `-radius` margin. That
+        // keeps the very first paint correct, with no flicker while waiting
+        // for measured bounds.
+        let thumb_radius = THUMB_SIZE / 2.;
 
+        // Fill edges, expressed inside that inset container: an edge that
+        // should reach the track's extreme uses `-radius` so it overflows the
+        // container by exactly one radius, and an edge that should stop at a
+        // thumb uses that thumb's percentage.
         let (bar_start, bar_end): (DefiniteLength, DefiniteLength) = if self.reverse && !is_range {
             // Fill from the thumb to the max end (remaining side).
-            if use_inset {
-                (
-                    px(thumb_radius + percentage.end * inner_size).into(),
-                    px(0.).into(),
-                )
-            } else {
-                (relative(percentage.end).into(), relative(0.).into())
-            }
+            (relative(percentage.end).into(), (-thumb_radius).into())
+        } else if is_range {
+            // Fill between the two thumbs.
+            (
+                relative(percentage.start).into(),
+                relative(1. - percentage.end).into(),
+            )
         } else {
-            // Fill from the min edge (or the start thumb, in range mode) to
-            // the end thumb's center.
-            if use_inset {
-                let start = if is_range {
-                    thumb_radius + percentage.start * inner_size
-                } else {
-                    0.
-                };
-                let end_center = thumb_radius + percentage.end * inner_size;
-                (
-                    px(start).into(),
-                    px((track_size - end_center).max(0.)).into(),
-                )
-            } else {
-                (
-                    relative(percentage.start).into(),
-                    relative(1. - percentage.end).into(),
-                )
-            }
+            // Fill from the min edge to the thumb.
+            ((-thumb_radius).into(), relative(1. - percentage.end).into())
         };
         let rem_size = window.rem_size();
 
@@ -483,24 +460,56 @@ impl RenderOnce for Slider {
                                     .bg(bar_color.opacity(0.2))
                                     .active(|this| this.bg(bar_color.opacity(0.4)))
                                     .corner_radii(radius)
-                                    .when(self.show_fill, |this| {
-                                        this.child(
-                                            div()
-                                                .absolute()
-                                                .when(axis.is_horizontal(), |this| {
-                                                    this.h_full().left(bar_start).right(bar_end)
-                                                })
-                                                .when(axis.is_vertical(), |this| {
-                                                    this.w_full().bottom(bar_start).top(bar_end)
-                                                })
-                                                .bg(bar_color)
-                                                .rounded_full_style(cx),
-                                        )
-                                    })
-                                    .when_some(start_ring, |this, ring| {
-                                        this.child(thumb(thumb_center_at(percentage.start), true, ring))
-                                    })
-                                    .child(thumb(thumb_center_at(percentage.end), false, end_ring)),
+                                    .child(
+                                        // Thumb track: inset by one thumb
+                                        // radius at each end of the axis, so a
+                                        // thumb placed at `relative(p)` with a
+                                        // `-radius` margin has its center
+                                        // travel between `radius` and
+                                        // `track - radius`.
+                                        div()
+                                            .absolute()
+                                            .when(axis.is_horizontal(), |this| {
+                                                this.h_full()
+                                                    .left(thumb_radius)
+                                                    .right(thumb_radius)
+                                            })
+                                            .when(axis.is_vertical(), |this| {
+                                                this.w_full()
+                                                    .top(thumb_radius)
+                                                    .bottom(thumb_radius)
+                                            })
+                                            .when(self.show_fill, |this| {
+                                                this.child(
+                                                    div()
+                                                        .absolute()
+                                                        .when(axis.is_horizontal(), |this| {
+                                                            this.h_full()
+                                                                .left(bar_start)
+                                                                .right(bar_end)
+                                                        })
+                                                        .when(axis.is_vertical(), |this| {
+                                                            this.w_full()
+                                                                .bottom(bar_start)
+                                                                .top(bar_end)
+                                                        })
+                                                        .bg(bar_color)
+                                                        .rounded_full_style(cx),
+                                                )
+                                            })
+                                            .when_some(start_ring, |this, ring| {
+                                                this.child(thumb(
+                                                    relative(percentage.start),
+                                                    true,
+                                                    ring,
+                                                ))
+                                            })
+                                            .child(thumb(
+                                                relative(percentage.end),
+                                                false,
+                                                end_ring,
+                                            )),
+                                    ),
                             ),
                     ),
             )
