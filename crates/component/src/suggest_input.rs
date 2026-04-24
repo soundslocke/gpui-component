@@ -10,15 +10,14 @@
 //! input — the text input itself acts as the search field.
 
 use gpui::{
-    deferred, div, prelude::FluentBuilder, px, rems, AnyElement, App, AppContext, Bounds, Context,
-    Edges, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement,
+    anchored, deferred, div, prelude::FluentBuilder, px, rems, AnyElement, App, AppContext, Bounds,
+    Context, Edges, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement,
     ParentElement, Pixels, Render, RenderOnce, SharedString, Styled,
     Subscription, Task, WeakEntity, Window,
 };
 
 use crate::{
     actions::{Cancel, SelectDown, SelectUp},
-    anchored::anchored,
     dialog::ConfirmDialog,
     global_state::GlobalState,
     h_flex,
@@ -222,7 +221,19 @@ impl SuggestInputState {
                         }
                         let text = input_for_sub.read(cx).value().to_string();
                         list_for_sub.update(cx, |list: &mut ListState<SuggestDelegate>, cx| {
-                            list.set_query(&text, window, cx);
+                            // Drive the delegate directly: ListState::set_query
+                            // writes to the list's internal query_input via
+                            // InputState::set_value, which suppresses events,
+                            // so the list's own subscription never fires the
+                            // search.
+                            let _ = list.delegate_mut().perform_search(&text, window, cx);
+                            let has_items = !list.delegate().matched_items.is_empty();
+                            list.set_selected_index(
+                                has_items.then(IndexPath::default),
+                                window,
+                                cx,
+                            );
+                            cx.notify();
                         });
                         // Suppress the popup when the input value already
                         // exactly matches the only filtered item — there's
@@ -259,7 +270,16 @@ impl SuggestInputState {
                             list_for_sub.update(
                                 cx,
                                 |list: &mut ListState<SuggestDelegate>, cx| {
-                                    list.set_query(&text, window, cx);
+                                    let _ =
+                                        list.delegate_mut().perform_search(&text, window, cx);
+                                    let has_items =
+                                        !list.delegate().matched_items.is_empty();
+                                    list.set_selected_index(
+                                        has_items.then(IndexPath::default),
+                                        window,
+                                        cx,
+                                    );
+                                    cx.notify();
                                 },
                             );
                             // Don't open if the current value is already an
