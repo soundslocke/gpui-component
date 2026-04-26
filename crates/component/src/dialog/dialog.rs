@@ -13,7 +13,7 @@ use crate::{
     ActiveTheme as _, IconName, Root, Sizable as _, StyledExt, TITLE_BAR_HEIGHT, WindowExt as _,
     animation::cubic_bezier,
     button::{Button, ButtonVariant, ButtonVariants as _},
-    dialog::{DialogContent, DialogTitle},
+    dialog::{DialogContent, DialogDescription, DialogTitle},
     scroll::ScrollableElement as _,
     v_flex,
 };
@@ -239,6 +239,7 @@ pub struct Dialog {
     children: Vec<AnyElement>,
     trigger: Option<AnyElement>,
     title: Option<AnyElement>,
+    description: Option<AnyElement>,
     pub(crate) header: Option<AnyElement>,
     pub(crate) footer: Option<AnyElement>,
     pub(crate) content_builder: Option<ContentBuilderFn>,
@@ -269,6 +270,7 @@ impl Dialog {
             style: StyleRefinement::default(),
             trigger: None,
             title: None,
+            description: None,
             header: None,
             footer: None,
             content_builder: None,
@@ -300,6 +302,13 @@ impl Dialog {
     /// Sets the title of the dialog.
     pub fn title(mut self, title: impl IntoElement) -> Self {
         self.title = Some(title.into_any_element());
+        self
+    }
+
+    /// Sets the description (subtitle) of the dialog, rendered immediately
+    /// below the title in the muted-foreground style of `DialogDescription`.
+    pub fn description(mut self, description: impl IntoElement) -> Self {
+        self.description = Some(description.into_any_element());
         self
     }
 
@@ -608,6 +617,14 @@ impl RenderOnce for Dialog {
                                                         .pl(paddings.left)
                                                         .pr(paddings.right)
                                                         .child(title),
+                                                )
+                                            })
+                                            .when_some(self.description, |this, description| {
+                                                this.child(
+                                                    DialogDescription::new()
+                                                        .pl(paddings.left)
+                                                        .pr(paddings.right)
+                                                        .child(description),
                                                 )
                                             })
                                             .when_some(self.content_builder, |this, builder| {
