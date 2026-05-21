@@ -84,6 +84,7 @@ struct SelectOptions {
     accessibility_label: Option<SharedString>,
     title_prefix: Option<SharedString>,
     search_placeholder: Option<SharedString>,
+    search_icon: Option<Icon>,
     menu_width: Length,
     menu_max_h: Length,
     disabled: bool,
@@ -107,6 +108,7 @@ impl Default for SelectOptions {
             appearance: true,
             focus_ring_enabled: true,
             search_placeholder: None,
+            search_icon: None,
         }
     }
 }
@@ -125,6 +127,7 @@ where
     icon: Option<Icon>,
     title_prefix: Option<SharedString>,
     focus_ring_enabled: bool,
+    search_icon: Option<Icon>,
 }
 
 /// A Select element.
@@ -263,6 +266,7 @@ where
             icon: None,
             title_prefix: None,
             focus_ring_enabled: true,
+            search_icon: None,
         }
     }
 
@@ -564,6 +568,9 @@ where
                                                 this.search_placeholder(placeholder)
                                             },
                                         )
+                                        .when_some(self.search_icon.clone(), |this, icon| {
+                                            this.search_icon(icon)
+                                        })
                                         .with_size(self.state.size)
                                         .max_h(self.state.menu_max_h)
                                         .paddings(Edges::all(px(4.))),
@@ -644,6 +651,12 @@ where
     /// Set the placeholder text for the search input.
     pub fn search_placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
         self.options.search_placeholder = Some(placeholder.into());
+        self
+    }
+
+    /// Set the icon for the search input, default is `IconName::Search`.
+    pub fn search_icon(mut self, icon: impl Into<Icon>) -> Self {
+        self.options.search_icon = Some(icon.into());
         self
     }
 
@@ -760,6 +773,7 @@ where
             this.focus_ring_enabled = opts.focus_ring_enabled;
             this.icon = opts.icon;
             this.title_prefix = opts.title_prefix;
+            this.search_icon = opts.search_icon;
 
             if let Some(empty) = empty {
                 this.state.empty = Some(empty);
