@@ -468,7 +468,7 @@ where
             list.delegate_mut().size = self.state.size;
         });
 
-        div().size_full().relative().child(
+        div().relative().child(
             div()
                 .relative()
                 .on_prepaint({
@@ -795,7 +795,6 @@ where
             .on_open_change(move |open, _, cx| {
                 open_state.update(cx, |state, cx| state.set_open(open, cx));
             })
-            .size_full()
             .child(self.state)
     }
 }
