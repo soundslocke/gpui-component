@@ -18,7 +18,7 @@ use gpui::{
 
 use crate::{
     actions::{Cancel, SelectDown, SelectUp},
-    dialog::ConfirmDialog,
+    dialog::Confirm,
     global_state::GlobalState,
     h_flex,
     input::{Input, InputEvent, InputState},
@@ -347,9 +347,9 @@ impl SuggestInputState {
         self.open = open;
         let fh = self.input.focus_handle(cx);
         if self.open {
-            GlobalState::global_mut(cx).register_deferred_popover(&fh);
+            GlobalState::register_deferred_popover(&fh, cx);
         } else {
-            GlobalState::global_mut(cx).unregister_deferred_popover(&fh);
+            GlobalState::unregister_deferred_popover(&fh, cx);
         }
         cx.notify();
     }
@@ -470,10 +470,10 @@ impl RenderOnce for SuggestInput {
                     state.update(cx, |s, cx| s.set_open(false, cx));
                 }
             })
-            // Prevent Enter from bubbling up to a parent Dialog's
-            // ConfirmDialog handler while the user is interacting with the
-            // suggest input (typing or picking from the popup).
-            .on_action(|_: &ConfirmDialog, _window, _cx| {})
+            // Prevent Enter from bubbling up to a parent Dialog's Confirm
+            // handler while the user is interacting with the suggest input
+            // (typing or picking from the popup).
+            .on_action(|_: &Confirm, _window, _cx| {})
             .child(Input::new(&input).with_size(self.size))
             .when(show_popup, |this: gpui::Stateful<gpui::Div>| {
                 this.child(

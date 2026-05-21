@@ -9,7 +9,8 @@ use gpui::{
 use crate::StyledExt as _;
 use crate::actions::{Cancel, Confirm, SelectDown, SelectUp};
 
-const CONTEXT: &str = "Select";
+/// Key context the select trigger dispatches in.
+pub const CONTEXT: &str = "Select";
 
 #[doc(hidden)]
 pub fn init(cx: &mut App) {

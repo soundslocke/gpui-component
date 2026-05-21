@@ -1,8 +1,8 @@
 use gpui::{
     AnyElement, App, ClickEvent, Context, DismissEvent, Edges, ElementId, Entity, EventEmitter,
-    FocusHandle, Focusable, Hsla, InteractiveElement, IntoElement, Length, ParentElement, Render,
-    RenderOnce, SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Window,
-    deferred, div, prelude::FluentBuilder, px, rems,
+    FocusHandle, Focusable, Hsla, InteractiveElement, IntoElement, KeyBinding, Length,
+    ParentElement, Render, RenderOnce, SharedString, StatefulInteractiveElement, StyleRefinement,
+    Styled, Window, actions, deferred, div, prelude::FluentBuilder, px, rems,
 };
 use rust_i18n::t;
 
@@ -20,6 +20,26 @@ use crate::{
     v_flex,
 };
 use gpui_base::{GlobalState, Select as BaseSelect};
+
+// `tab` and `shift-tab` are claimed in the Select context so the Select can
+// implement "commit current selection then advance focus" while the dropdown
+// menu is open. When the menu is closed, the handler dispatches the regular
+// `Tab`/`TabPrev` actions back through Root so the standard focus-trap aware
+// navigation runs unchanged.
+actions!(select, [SelectTab, SelectTabPrev]);
+
+pub(crate) fn init(cx: &mut App) {
+    // The rest of the Select context bindings live in `gpui_base::select`.
+    cx.bind_keys([
+        KeyBinding::new(
+            "space",
+            crate::actions::Confirm { secondary: false },
+            Some(gpui_base::SELECT_CONTEXT),
+        ),
+        KeyBinding::new("tab", SelectTab, Some(gpui_base::SELECT_CONTEXT)),
+        KeyBinding::new("shift-tab", SelectTabPrev, Some(gpui_base::SELECT_CONTEXT)),
+    ])
+}
 
 // MARK: Public re-exports for back-compat
 
@@ -393,6 +413,57 @@ where
         cx.notify();
     }
 
+    /// Tab handler bound in the Select context. When the menu is open, commits
+    /// the highlighted item, closes the menu, and advances focus to the next
+    /// element. When the menu is closed, re-dispatches the standard `Tab`
+    /// action so Root's focus-trap-aware navigation runs unchanged.
+    fn select_tab(&mut self, _: &SelectTab, window: &mut Window, cx: &mut Context<Self>) {
+        self.tab_navigate(false, window, cx);
+    }
+
+    fn select_tab_prev(&mut self, _: &SelectTabPrev, window: &mut Window, cx: &mut Context<Self>) {
+        self.tab_navigate(true, window, cx);
+    }
+
+    fn tab_navigate(&mut self, backwards: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let tab_action = move || -> Box<dyn gpui::Action> {
+            if backwards {
+                Box::new(crate::root::TabPrev)
+            } else {
+                Box::new(crate::root::Tab)
+            }
+        };
+
+        if !self.state.open {
+            // Closed: defer to Root's normal Tab handling so focus traps work.
+            window.dispatch_action(tab_action(), cx);
+            return;
+        }
+
+        // Open: confirm any current highlight (a no-op when nothing is
+        // selected), then force-close the menu and put focus back on the
+        // trigger so the state is consistent. `confirm_selection` schedules
+        // its own deferred close, which would otherwise restore focus to the
+        // trigger after we moved it; closing and re-focusing inline here makes
+        // that deferred close idempotent.
+        self.state.list.update(cx, |list, cx| {
+            list.confirm_selection(window, cx);
+        });
+        self.set_open(false, cx);
+        self.focus(window, cx);
+
+        // Advance focus after the current effect cycle, so it runs after
+        // `confirm_selection`'s deferred close-and-restore-focus (queued
+        // first). Going through `crate::root::Tab` keeps the dialog focus trap
+        // behavior intact.
+        let window_handle = window.window_handle();
+        cx.defer(move |cx| {
+            let _ = window_handle.update(cx, |_, window, cx| {
+                window.dispatch_action(tab_action(), cx);
+            });
+        });
+    }
+
     fn set_open(&mut self, open: bool, cx: &mut Context<Self>) {
         self.state.open = open;
         self.state.deferred_context = open.then(|| GlobalState::register_deferred_popover(cx));
@@ -753,9 +824,15 @@ where
     D: SearchableListDelegate + 'static,
     <D::Item as SearchableListItem>::Value: PartialEq + Clone,
 {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let disabled = self.options.disabled;
         let accessibility_label = self.options.accessibility_label.clone();
+        // Always track the trigger's focus handle, never the list/query handle.
+        // The `Focusable` impl returns the list handle while the menu is open,
+        // but tracking that one is unsafe: when an ancestor view re-uses its
+        // cached prepaint, the cached div replays a `track_focus(list_handle)`
+        // pointing at an element no longer in the dispatch tree, leaving
+        // keyboard focus stranded once the menu closes.
         let focus_handle = self.state.read(cx).state.focus_handle.clone();
         let empty = self.empty;
         let opts = self.options;
@@ -784,18 +861,25 @@ where
         let content_focus_handle = self.state.read(cx).state.list.focus_handle(cx);
         let open_state = self.state.clone();
 
-        BaseSelect::new(self.id)
-            .open(is_open)
-            .disabled(disabled)
-            .when_some(accessibility_label, |this, label| {
-                this.accessibility_label(label)
-            })
-            .focus_handle(&focus_handle)
-            .content_focus_handle(&content_focus_handle)
-            .on_open_change(move |open, _, cx| {
-                open_state.update(cx, |state, cx| state.set_open(open, cx));
-            })
-            .child(self.state)
+        // The Tab handlers sit on a wrapper: `BaseSelect` owns the key context
+        // and the focus handle, and the actions bubble out to here.
+        div()
+            .on_action(window.listener_for(&self.state, SelectState::select_tab))
+            .on_action(window.listener_for(&self.state, SelectState::select_tab_prev))
+            .child(
+                BaseSelect::new(self.id)
+                    .open(is_open)
+                    .disabled(disabled)
+                    .when_some(accessibility_label, |this, label| {
+                        this.accessibility_label(label)
+                    })
+                    .focus_handle(&focus_handle)
+                    .content_focus_handle(&content_focus_handle)
+                    .on_open_change(move |open, _, cx| {
+                        open_state.update(cx, |state, cx| state.set_open(open, cx));
+                    })
+                    .child(self.state),
+            )
     }
 }
 

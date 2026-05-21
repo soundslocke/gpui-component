@@ -141,6 +141,7 @@ pub fn init(cx: &mut App) {
     notification::init(cx);
     popover::init(cx);
     menu::init(cx);
+    select::init(cx);
     slider::init(cx);
     table::init(cx);
     tooltip::init(cx);

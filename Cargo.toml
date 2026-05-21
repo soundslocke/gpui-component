@@ -169,4 +169,4 @@ gpui = { path = "../zed/crates/gpui" }
 gpui_macros = { path = "../zed/crates/gpui_macros" }
 gpui_platform = { path = "../zed/crates/gpui_platform" }
 gpui_web = { path = "../zed/crates/gpui_web" }
-reqwest_client = { path = "../zed/crates/gpui_web" }
+reqwest_client = { path = "../zed/crates/reqwest_client" }

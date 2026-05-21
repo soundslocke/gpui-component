@@ -147,7 +147,7 @@ pub use scrollbar::{
     Scrollbar, ScrollbarAxis, ScrollbarEntrance, ScrollbarHandle, ScrollbarMode, ScrollbarMotion,
     ScrollbarStyles, ScrollbarThumbStyle, ScrollbarTrackStyle,
 };
-pub use select::Select;
+pub use select::{CONTEXT as SELECT_CONTEXT, Select};
 pub use selectable_text::SelectableText;
 pub use sheet::Sheet;
 pub use slider::{Slider, SliderIndicator, SliderThumb, SliderTrack};

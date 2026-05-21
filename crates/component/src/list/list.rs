@@ -28,6 +28,7 @@ pub(crate) fn init(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("escape", Cancel, context),
         KeyBinding::new("enter", Confirm { secondary: false }, context),
+        KeyBinding::new("space", Confirm { secondary: false }, context),
         KeyBinding::new("secondary-enter", Confirm { secondary: true }, context),
         KeyBinding::new("up", SelectUp, context),
         KeyBinding::new("down", SelectDown, context),
