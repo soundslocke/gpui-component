@@ -402,7 +402,7 @@ where
         cx.emit(SelectEvent::Confirm(None));
     }
 
-    fn display_title(&mut self, _: &Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn display_title(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let default_title = div().text_color(cx.theme().muted_foreground).child(
             self.state
                 .placeholder
@@ -414,24 +414,26 @@ where
             return default_title;
         };
 
-        let Some(title) = self
+        // Clone the item out before calling `display_title` so we don't hold a borrow on
+        // `self.state.list` while passing `&mut App` (via `cx`) to the implementor.
+        let item = self
             .state
             .list
             .read(cx)
             .delegate()
             .delegate
             .item(selected_index)
-            .map(|item| {
-                if let Some(el) = item.display_title() {
-                    el
-                } else if let Some(prefix) = self.title_prefix.as_ref() {
-                    format!("{}{}", prefix, item.title()).into_any_element()
-                } else {
-                    item.title().into_any_element()
-                }
-            })
-        else {
+            .cloned();
+        let Some(item) = item else {
             return default_title;
+        };
+
+        let title = if let Some(el) = item.display_title(window, cx) {
+            el
+        } else if let Some(prefix) = self.title_prefix.as_ref() {
+            format!("{}{}", prefix, item.title()).into_any_element()
+        } else {
+            item.title().into_any_element()
         };
 
         div()

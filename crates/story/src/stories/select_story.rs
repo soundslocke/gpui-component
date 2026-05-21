@@ -30,7 +30,11 @@ impl SelectItem for Country {
         self.name.clone()
     }
 
-    fn display_title(&self) -> Option<gpui_kit::AnyElement> {
+    fn display_title(
+        &self,
+        _: &mut gpui_kit::Window,
+        _: &mut gpui_kit::App,
+    ) -> Option<gpui_kit::AnyElement> {
         Some(format!("{} ({})", self.name, self.code).into_any_element())
     }
 

@@ -13,8 +13,9 @@ pub trait SearchableListItem: Clone {
 
     /// Override the trigger display element (e.g. "Country (US)" instead of just "United States").
     ///
-    /// Returns `None` to fall back to `title()`.
-    fn display_title(&self) -> Option<AnyElement> {
+    /// Returns `None` to fall back to `title()`. Receives `&mut Window` and `&mut App` so
+    /// implementations can build arbitrary elements that need context (icons, theme colors, etc.).
+    fn display_title(&self, _: &mut Window, _: &mut App) -> Option<AnyElement> {
         None
     }
 
