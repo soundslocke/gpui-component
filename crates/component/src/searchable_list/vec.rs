@@ -1,6 +1,8 @@
-use gpui::{App, SharedString, Task, Window};
+use std::fmt;
 
-use crate::IndexPath;
+use gpui::{App, ParentElement as _, SharedString, Styled as _, Task, Window};
+
+use crate::{Icon, IndexPath, Sizable as _, h_flex};
 
 use super::delegate::{SearchableListDelegate, SearchableListItem};
 
@@ -142,10 +144,21 @@ impl<I: SearchableListItem + 'static> SearchableListDelegate for SearchableVec<I
 // MARK: SearchableGroup
 
 /// A named group of items used for sectioned lists.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SearchableGroup<I: SearchableListItem> {
     pub title: SharedString,
+    pub icon: Option<Icon>,
     pub items: Vec<I>,
+}
+
+impl<I: SearchableListItem + fmt::Debug> fmt::Debug for SearchableGroup<I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SearchableGroup")
+            .field("title", &self.title)
+            .field("icon", &self.icon.as_ref().map(|_| ".."))
+            .field("items", &self.items)
+            .finish()
+    }
 }
 
 impl<I: SearchableListItem> SearchableGroup<I> {
@@ -153,8 +166,15 @@ impl<I: SearchableListItem> SearchableGroup<I> {
     pub fn new(title: impl Into<SharedString>) -> Self {
         Self {
             title: title.into(),
+            icon: None,
             items: vec![],
         }
+    }
+
+    /// Set an icon to display before the group title in the section header.
+    pub fn icon(mut self, icon: impl Into<Icon>) -> Self {
+        self.icon = Some(icon.into());
+        self
     }
 
     /// Append a single item to this group.
@@ -191,13 +211,19 @@ impl<I: SearchableListItem + 'static> SearchableListDelegate for SearchableVec<S
     fn section(&self, section: usize) -> Option<gpui::AnyElement> {
         use gpui::IntoElement as _;
 
-        Some(
-            self.matched_items
-                .get(section)?
-                .title
-                .clone()
-                .into_any_element(),
-        )
+        let group = self.matched_items.get(section)?;
+        if let Some(icon) = &group.icon {
+            Some(
+                h_flex()
+                    .gap_1()
+                    .items_center()
+                    .child(icon.clone().xsmall())
+                    .child(group.title.clone())
+                    .into_any_element(),
+            )
+        } else {
+            Some(group.title.clone().into_any_element())
+        }
     }
 
     fn item(&self, ix: IndexPath) -> Option<&Self::Item> {
