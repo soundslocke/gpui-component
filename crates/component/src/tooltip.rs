@@ -275,8 +275,9 @@ pub(crate) trait ManagedTooltipExt:
                             o.request_show(request, window, cx);
                         });
                     } else {
+                        let bounds = trigger_bounds_cell.get();
                         overlay.update(cx, |o: &mut BaseTooltipOverlay, cx| {
-                            o.request_hide(window, cx);
+                            o.request_hide(bounds, window, cx);
                         });
                     }
                 }

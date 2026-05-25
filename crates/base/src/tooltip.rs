@@ -94,6 +94,10 @@ pub enum TooltipTransition {
 pub struct TooltipOverlay {
     content: Option<TooltipRequest>,
     previous_bounds: Option<Bounds<Pixels>>,
+    /// Trigger bounds of an in-flight delayed show, set only while waiting out
+    /// `SHOW_DELAY`. Lets an out-of-order hover-out for an unrelated element be
+    /// ignored instead of cancelling this show.
+    pending_show_bounds: Option<Bounds<Pixels>>,
     epoch: usize,
     had_recent_tooltip: bool,
     animation_epoch: usize,
@@ -108,6 +112,7 @@ impl TooltipOverlay {
         Self {
             content: None,
             previous_bounds: None,
+            pending_show_bounds: None,
             epoch: 0,
             had_recent_tooltip: false,
             animation_epoch: 0,
@@ -143,6 +148,7 @@ impl TooltipOverlay {
             self.previous_bounds = self.content.as_ref().map(|content| content.trigger_bounds);
             self.content = Some(content);
             self.show_task = None;
+            self.pending_show_bounds = None;
             self.is_switching = was_visible;
             self.animation_epoch += 1;
             cx.notify();
@@ -150,12 +156,14 @@ impl TooltipOverlay {
         }
 
         let epoch = self.next_epoch();
+        self.pending_show_bounds = Some(content.trigger_bounds);
         self.show_task = Some(cx.spawn_in(window, async move |this, cx| {
             cx.background_executor().timer(SHOW_DELAY).await;
             let _ = this.update_in(cx, |this, _, cx| {
                 if this.epoch == epoch {
                     this.content = Some(content);
                     this.previous_bounds = None;
+                    this.pending_show_bounds = None;
                     this.is_switching = false;
                     this.animation_epoch += 1;
                     cx.notify();
@@ -164,8 +172,29 @@ impl TooltipOverlay {
         }));
     }
 
-    pub fn request_hide(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn request_hide(
+        &mut self,
+        trigger_bounds: Bounds<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Moving the cursor between two adjacent triggers fires hover-out for
+        // the old one and hover-in for the new one in the same frame, in no
+        // guaranteed order. Ignore a hide naming a trigger that is no longer
+        // the one showing (or about to show), so a late hover-out cannot wipe
+        // out the tooltip that has already taken over.
+        if let Some(pending) = self.pending_show_bounds {
+            if pending != trigger_bounds {
+                return;
+            }
+        } else if let Some(content) = self.content.as_ref()
+            && content.trigger_bounds != trigger_bounds
+        {
+            return;
+        }
+
         self.show_task = None;
+        self.pending_show_bounds = None;
         if self.content.is_none() {
             return;
         }
@@ -187,11 +216,13 @@ impl TooltipOverlay {
     pub fn hide(&mut self, cx: &mut Context<Self>) {
         let changed = self.content.is_some()
             || self.previous_bounds.is_some()
+            || self.pending_show_bounds.is_some()
             || self.had_recent_tooltip
             || self.show_task.is_some()
             || self.hide_task.is_some();
         self.content = None;
         self.previous_bounds = None;
+        self.pending_show_bounds = None;
         self.had_recent_tooltip = false;
         self.is_switching = false;
         self.show_task = None;
