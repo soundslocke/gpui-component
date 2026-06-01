@@ -78,6 +78,10 @@ impl RenderOnce for Tree {
         div()
             .id(self.id)
             .size_full()
+            // Column flex so the tree fills the height it is given instead of
+            // collapsing to its content.
+            .flex()
+            .flex_col()
             .child(
                 gpui_base::Tree::new(&self.state)
                     .item(move |ix, entry, entry_state, window, cx| {
@@ -105,6 +109,8 @@ impl RenderOnce for Tree {
                     })
                     .list_style(StyleRefinement::default().flex_grow_1().size_full())
                     .relative()
+                    .flex()
+                    .flex_col()
                     .size_full(),
             )
             .refine_style(&self.style)
