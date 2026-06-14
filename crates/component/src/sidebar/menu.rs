@@ -160,6 +160,7 @@ impl SidebarItem for SidebarMenu {
             || on_confirm.is_some();
 
         v_flex()
+            .w_full()
             .gap_2()
             .refine_style(&self.style)
             .when_some(focus_handle.as_ref(), |this, fh| this.track_focus(fh))

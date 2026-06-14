@@ -122,9 +122,9 @@ impl<E: SidebarItem> SidebarItem for SidebarGroup<E> {
                 )
             })
             .child(
-                div()
+                v_flex()
+                    .w_full()
                     .gap_2()
-                    .flex_col()
                     .children(self.children.into_iter().enumerate().map(|(ix, child)| {
                         child
                             .collapsed(self.collapsed)
