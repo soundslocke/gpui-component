@@ -224,6 +224,7 @@ pub struct SidebarMenuItem {
     icon: Option<Icon>,
     label: SharedString,
     subtitle: Option<SharedString>,
+    detail: Option<Rc<dyn Fn(&mut Window, &mut App) -> AnyElement + 'static>>,
     handler: Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>,
     active: bool,
     default_open: bool,
@@ -251,6 +252,7 @@ impl SidebarMenuItem {
             icon: None,
             label: label.into(),
             subtitle: None,
+            detail: None,
             handler: Rc::new(|_, _, _| {}),
             active: false,
             collapsed: false,
@@ -269,6 +271,20 @@ impl SidebarMenuItem {
     /// Set a subtitle line below the label, rendered in smaller muted text.
     pub fn subtitle(mut self, subtitle: impl Into<SharedString>) -> Self {
         self.subtitle = Some(subtitle.into());
+        self
+    }
+
+    /// Set a custom content row rendered below the label and above the
+    /// subtitle. For richer per-item content the plain text `subtitle` can't
+    /// express — e.g. a row of badges. Rebuilt each render via the builder.
+    pub fn detail<F, E>(mut self, builder: F) -> Self
+    where
+        F: Fn(&mut Window, &mut App) -> E + 'static,
+        E: IntoElement,
+    {
+        self.detail = Some(Rc::new(move |window, cx| {
+            builder(window, cx).into_any_element()
+        }));
         self
     }
 
@@ -492,10 +508,10 @@ impl SidebarItem for SidebarMenuItem {
                         })
                     })
                     .when(!is_collapsed, |this| {
-                        let has_subtitle = self.subtitle.is_some();
+                        let has_extra = self.subtitle.is_some() || self.detail.is_some();
 
-                        this.when(!has_subtitle, |this| this.h_7())
-                            .when(has_subtitle, |this| this.py_1p5())
+                        this.when(!has_extra, |this| this.h_7())
+                            .when(has_extra, |this| this.py_1p5())
                             .child(
                                 h_flex()
                                     .flex_1()
@@ -507,6 +523,9 @@ impl SidebarItem for SidebarMenuItem {
                                             .flex_1()
                                             .overflow_x_hidden()
                                             .child(self.label.clone())
+                                            .when_some(self.detail.clone(), |this, detail| {
+                                                this.child(detail(window, cx))
+                                            })
                                             .when_some(self.subtitle.clone(), |this, subtitle| {
                                                 this.child(
                                                     div()
