@@ -9,9 +9,8 @@ use crate::{
 };
 use gpui::{
     AnyElement, App, ClickEvent, ElementId, FocusHandle, InteractiveElement as _, IntoElement,
-    KeyDownEvent, MouseButton, ParentElement as _, SharedString,
-    StatefulInteractiveElement as _, StyleRefinement, Styled, Window, div, percentage,
-    prelude::FluentBuilder,
+    KeyDownEvent, MouseButton, ParentElement as _, SharedString, StatefulInteractiveElement as _,
+    StyleRefinement, Styled, Window, div, percentage, prelude::FluentBuilder,
 };
 use std::rc::Rc;
 
@@ -78,46 +77,31 @@ impl SidebarMenu {
     }
 
     /// Callback fired when the Up arrow key is pressed while the menu is focused.
-    pub fn on_select_prev(
-        mut self,
-        handler: impl Fn(&mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_select_prev(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_select_prev = Some(Rc::new(handler));
         self
     }
 
     /// Callback fired when the Down arrow key is pressed while the menu is focused.
-    pub fn on_select_next(
-        mut self,
-        handler: impl Fn(&mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_select_next(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_select_next = Some(Rc::new(handler));
         self
     }
 
     /// Callback fired when the Home key is pressed while the menu is focused.
-    pub fn on_select_first(
-        mut self,
-        handler: impl Fn(&mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_select_first(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_select_first = Some(Rc::new(handler));
         self
     }
 
     /// Callback fired when the End key is pressed while the menu is focused.
-    pub fn on_select_last(
-        mut self,
-        handler: impl Fn(&mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_select_last(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_select_last = Some(Rc::new(handler));
         self
     }
 
     /// Callback fired when Enter or Space is pressed while the menu is focused.
-    pub fn on_confirm(
-        mut self,
-        handler: impl Fn(&mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_confirm(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_confirm = Some(Rc::new(handler));
         self
     }
@@ -233,6 +217,11 @@ pub struct SidebarMenuItem {
     click_to_toggle: bool,
     children: Vec<Self>,
     suffix: Option<Rc<dyn Fn(&mut Window, &mut App) -> AnyElement + 'static>>,
+    /// Optional background layer, rendered behind the icon/label/suffix but
+    /// above the item's hover/active fill, and clipped to the rounded item
+    /// shape. For decorative per-item art (e.g. character class portraits). The
+    /// builder positions its own element within the item bounds.
+    background: Option<Rc<dyn Fn(&mut Window, &mut App) -> AnyElement + 'static>>,
     disabled: bool,
     context_menu: Option<Rc<dyn Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + 'static>>,
     /// Set internally by [`SidebarMenu`] when its focus handle is focused,
@@ -261,6 +250,7 @@ impl SidebarMenuItem {
             click_to_toggle: false,
             children: Vec::new(),
             suffix: None,
+            background: None,
             disabled: false,
             context_menu: None,
             parent_focused: false,
@@ -360,6 +350,23 @@ impl SidebarMenuItem {
         self
     }
 
+    /// Set a background layer for the menu item, rendered behind the content but
+    /// above the hover/active fill and clipped to the rounded item shape. The
+    /// builder's element positions itself within the item bounds (use
+    /// `.absolute()`); the item switches to `overflow_hidden` so a full-bleed
+    /// layer is clipped to the rounded corners. Intended for decorative art such
+    /// as a character class portrait.
+    pub fn background<F, E>(mut self, builder: F) -> Self
+    where
+        F: Fn(&mut Window, &mut App) -> E + 'static,
+        E: IntoElement,
+    {
+        self.background = Some(Rc::new(move |window, cx| {
+            builder(window, cx).into_any_element()
+        }));
+        self
+    }
+
     /// Set disabled flat for menu item.
     pub fn disable(mut self, disable: bool) -> Self {
         self.disabled = disable;
@@ -451,12 +458,22 @@ impl SidebarItem for SidebarMenuItem {
                     .size_full()
                     .id("item")
                     .relative()
-                    .overflow_x_hidden()
+                    // A background layer bleeds to the rounded-rect edges, so
+                    // clip both axes; otherwise keep the x-only clip that
+                    // truncates long labels without hiding vertical content.
+                    .when(self.background.is_none(), |this| this.overflow_x_hidden())
+                    .when(self.background.is_some(), |this| this.overflow_hidden())
                     .flex_shrink_0()
                     .p_2()
                     .gap_x_2()
                     .rounded(cx.theme().radius)
                     .text_sm()
+                    // Decorative background layer: painted after the item's own
+                    // hover/active fill (element background) but before the
+                    // icon/label/suffix children, so it sits behind the text.
+                    .when_some(self.background.clone(), |this, background| {
+                        this.child(background(window, cx))
+                    })
                     // Suppress GPUI's bubble-phase auto-focus on the parent
                     // [`SidebarMenu`] when the user clicks an item. The parent
                     // would otherwise capture focus on mouse-down — before the
