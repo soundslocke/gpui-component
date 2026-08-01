@@ -8,13 +8,19 @@ use crate::{
     v_flex,
 };
 use gpui::{
-    AnyElement, App, ClickEvent, ElementId, FocusHandle, InteractiveElement as _, IntoElement,
-    KeyDownEvent, MouseButton, ParentElement as _, SharedString, StatefulInteractiveElement as _,
-    StyleRefinement, Styled, Window, div, percentage, prelude::FluentBuilder,
+    AnyElement, App, ClickEvent, Div, ElementId, FocusHandle, InteractiveElement as _, IntoElement,
+    KeyDownEvent, MouseButton, ParentElement as _, SharedString, Stateful,
+    StatefulInteractiveElement as _, StyleRefinement, Styled, Window, div, percentage,
+    prelude::FluentBuilder,
 };
 use std::rc::Rc;
 
 type SidebarKeyHandler = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
+
+/// Callback that decorates a [`SidebarMenuItem`]'s outer container.
+/// See [`SidebarMenuItem::wrap`].
+type SidebarMenuItemWrap =
+    Rc<dyn Fn(Stateful<Div>, &mut Window, &mut App) -> Stateful<Div> + 'static>;
 
 /// Menu for the [`super::Sidebar`]
 #[derive(Clone)]
@@ -224,6 +230,9 @@ pub struct SidebarMenuItem {
     background: Option<Rc<dyn Fn(&mut Window, &mut App) -> AnyElement + 'static>>,
     disabled: bool,
     context_menu: Option<Rc<dyn Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + 'static>>,
+    /// Optional decorator for the item's outer container, applied last. See
+    /// [`SidebarMenuItem::wrap`].
+    wrap: Option<SidebarMenuItemWrap>,
     /// Set internally by [`SidebarMenu`] when its focus handle is focused,
     /// so the active item can render a focus ring as the keyboard cursor.
     parent_focused: bool,
@@ -253,6 +262,7 @@ impl SidebarMenuItem {
             background: None,
             disabled: false,
             context_menu: None,
+            wrap: None,
             parent_focused: false,
             parent_focusable: false,
         }
@@ -390,6 +400,25 @@ impl SidebarMenuItem {
         self
     }
 
+    /// Decorate the item's outer container, applied after everything else.
+    ///
+    /// The container spans the item row plus any expanded submenu, carries the
+    /// item's element id, and is not clipped, so this is the hook for behavior
+    /// the item doesn't model itself: drag-and-drop handlers, absolutely
+    /// positioned overlays such as a reorder drop indicator, or extra styling.
+    /// For decoration *inside* the row (clipped to its rounded shape) use
+    /// [`Self::background`] instead.
+    ///
+    /// The callback runs on every render, so capture a `WeakEntity` rather
+    /// than a `cx.listener` closure when the handlers need view state.
+    pub fn wrap<F>(mut self, f: F) -> Self
+    where
+        F: Fn(Stateful<Div>, &mut Window, &mut App) -> Stateful<Div> + 'static,
+    {
+        self.wrap = Some(Rc::new(f));
+        self
+    }
+
     /// Internal: marks this item as belonging to a [`SidebarMenu`] whose
     /// focus handle is currently focused. Used by [`SidebarMenu`] to draw a
     /// focus ring on the active item.
@@ -441,6 +470,7 @@ impl SidebarItem for SidebarMenuItem {
             None
         };
         let handler = self.handler.clone();
+        let wrap = self.wrap.clone();
         let is_collapsed = self.collapsed;
         let is_active = self.active;
         let is_hoverable = !is_active && !self.disabled;
@@ -646,6 +676,10 @@ impl SidebarItem for SidebarMenuItem {
                             item.render(id, window, cx).into_any_element()
                         })),
                 )
+            })
+            .map(|this| match wrap {
+                Some(wrap) => wrap(this, window, cx),
+                None => this,
             })
     }
 }
