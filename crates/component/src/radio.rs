@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{rc::Rc, sync::Arc};
 
 use crate::ThemeStyled as _;
 use crate::{
@@ -6,9 +6,9 @@ use crate::{
     text::Text, tooltip::ComponentTooltip, v_flex,
 };
 use gpui::{
-    AnyElement, App, Axis, ElementId, InteractiveElement, IntoElement, ParentElement, RenderOnce,
-    SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Window, div,
-    prelude::FluentBuilder, relative, rems,
+    AnyElement, App, Axis, ElementId, FocusHandle, InteractiveElement, IntoElement, KeyDownEvent,
+    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, StyleRefinement, Styled,
+    Window, div, prelude::FluentBuilder, px, relative, rems,
 };
 use gpui_base::{Radio as BaseRadio, RadioGroup as BaseRadioGroup};
 
@@ -34,6 +34,9 @@ pub struct Radio {
     position_in_set: Option<usize>,
     size_of_set: Option<usize>,
     focus_ring_enabled: bool,
+    /// Supplied by [`RadioGroup`], which owns its options' handles so that it
+    /// can move focus between them. A standalone Radio mints its own.
+    focus_handle: Option<FocusHandle>,
 }
 
 impl Radio {
@@ -56,6 +59,7 @@ impl Radio {
             tooltip: ComponentTooltip::default(),
             position_in_set: None,
             size_of_set: None,
+            focus_handle: None,
             focus_ring_enabled: true,
         }
     }
@@ -156,10 +160,12 @@ impl ParentElement for Radio {
 impl RenderOnce for Radio {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let checked = self.checked;
-        let focus_handle = window
-            .use_keyed_state(self.id.clone(), cx, |_, cx| cx.focus_handle())
-            .read(cx)
-            .clone();
+        let focus_handle = self.focus_handle.clone().unwrap_or_else(|| {
+            window
+                .use_keyed_state(self.id.clone(), cx, |_, cx| cx.focus_handle())
+                .read(cx)
+                .clone()
+        });
         let is_focused = focus_handle.is_focused(window);
         let disabled = self.disabled;
         let accessibility_label = self
@@ -252,14 +258,12 @@ impl RenderOnce for Radio {
                         .children(self.children),
                 )
             })
-            .on_mouse_down(gpui::MouseButton::Left, |_, window, _| {
-                window.prevent_default()
-            })
+            // Focus deliberately follows the click (GPUI's `div` does it for
+            // any tracked handle): the ring stays hidden while the pointer is
+            // driving, so the only effect is that a later Tab or arrow key
+            // continues from the option the user actually picked.
             .when_some(self.on_click.clone(), |this, on_click| {
-                this.on_change(move |next, _, window, cx| {
-                    window.prevent_default();
-                    on_click(&next, window, cx);
-                })
+                this.on_change(move |next, _, window, cx| on_click(&next, window, cx))
             })
             .map(|this| self.tooltip.apply(this))
     }
@@ -363,11 +367,70 @@ impl From<String> for Radio {
     }
 }
 
+/// The direction an unmodified arrow key moves selection within a group.
+///
+/// Both axes are accepted whatever the group's layout, matching how browsers
+/// treat a radio group.
+fn arrow_step(event: &KeyDownEvent) -> Option<isize> {
+    if event.keystroke.modifiers.modified() {
+        return None;
+    }
+
+    match event.keystroke.key.as_str() {
+        "down" | "right" => Some(1),
+        "up" | "left" => Some(-1),
+        _ => None,
+    }
+}
+
+/// Walk from `from` in the `step` direction, wrapping around the ends, to the
+/// next option that can take the selection. `None` when there is no other one.
+fn next_selectable(from: usize, step: isize, selectable: &[bool]) -> Option<usize> {
+    let total = selectable.len();
+    let mut ix = from;
+    for _ in 0..total {
+        ix = (ix as isize + step).rem_euclid(total as isize) as usize;
+        if selectable[ix] {
+            return (ix != from).then_some(ix);
+        }
+    }
+
+    None
+}
+
 impl RenderOnce for RadioGroup {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let on_click = self.on_click;
         let disabled = self.disabled;
         let selected_ix = self.selected_index;
+        let total = self.radios.len();
+
+        // The group owns its options' focus handles so that arrow keys can
+        // move focus along with the selection.
+        let focus_handles: Vec<FocusHandle> = (0..total)
+            .map(|ix| {
+                let key = ElementId::NamedChild(
+                    Arc::new(self.id.clone()),
+                    SharedString::from(ix.to_string()),
+                );
+                window
+                    .use_keyed_state(key, cx, |_, cx| cx.focus_handle())
+                    .read(cx)
+                    .clone()
+            })
+            .collect();
+
+        let selectable: Vec<bool> = self
+            .radios
+            .iter()
+            .map(|radio| !disabled && !radio.disabled)
+            .collect();
+
+        // Roving tab stop: the group is a single stop in the tab order, and
+        // tabbing into it lands on the selected option rather than the first.
+        let tab_stop_ix = selected_ix
+            .filter(|ix| selectable.get(*ix).copied().unwrap_or(false))
+            .or_else(|| selectable.iter().position(|can_select| *can_select));
 
         let base = if self.layout.is_vertical() {
             v_flex()
@@ -375,10 +438,32 @@ impl RenderOnce for RadioGroup {
             h_flex().w_full().flex_wrap()
         };
 
-        let total = self.radios.len();
+        let radio_handles = focus_handles.clone();
         BaseRadioGroup::new(self.id)
             .axis(self.layout)
             .refine_style(&self.style)
+            .when_some(on_click.clone(), |this, on_click| {
+                let focus_handles = focus_handles.clone();
+                let selectable = selectable.clone();
+                // Arrow keys move the selection, taking focus with it, so focus
+                // never sits on an option the user did not pick.
+                this.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                    let Some(step) = arrow_step(event) else {
+                        return;
+                    };
+                    let Some(current) = focus_handles.iter().position(|h| h.is_focused(window))
+                    else {
+                        return;
+                    };
+                    let Some(next) = next_selectable(current, step, &selectable) else {
+                        return;
+                    };
+
+                    cx.stop_propagation();
+                    focus_handles[next].focus(window, cx);
+                    on_click(&next, window, cx);
+                })
+            })
             .child(
                 base.gap_3()
                     .children(self.radios.into_iter().enumerate().map(|(ix, mut radio)| {
@@ -387,12 +472,14 @@ impl RenderOnce for RadioGroup {
                         radio.id = ix.into();
                         radio.position_in_set = Some(ix + 1);
                         radio.size_of_set = Some(total);
-                        radio.disabled(disabled).checked(checked).when_some(
-                            on_click.clone(),
-                            |this, on_click| {
+                        radio.focus_handle = radio_handles.get(ix).cloned();
+                        radio
+                            .tab_stop(tab_stop_ix == Some(ix))
+                            .disabled(disabled)
+                            .checked(checked)
+                            .when_some(on_click.clone(), |this, on_click| {
                                 this.on_click(move |_, window, cx| on_click(&ix, window, cx))
-                            },
-                        )
+                            })
                     })),
             )
     }
