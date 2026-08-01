@@ -3,6 +3,7 @@ use std::ops::Deref;
 
 mod component_traits;
 mod element_ext;
+mod focus_visible;
 pub mod global_state;
 mod icon;
 mod index_path;
@@ -133,6 +134,7 @@ pub fn init(cx: &mut App) {
     inspector::init(cx);
     root::init(cx);
     gpui_base::init(cx);
+    focus_visible::init(cx);
     date_picker::init(cx);
     dock::init(cx);
     sheet::init(cx);

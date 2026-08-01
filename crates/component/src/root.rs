@@ -1,6 +1,7 @@
 use crate::{
     ActiveTheme, ElementExt, Placement, StyledExt,
     dialog::{ANIMATION_DURATION, Dialog},
+    focus_visible::FocusVisibleController,
     input::{AnyInputState, Copy},
     native_menu::FallbackMenuOverlay,
     notification::{Notification, NotificationList},
@@ -592,6 +593,7 @@ impl Render for Root {
             .bg(cx.theme().tokens.background)
             .text_color(cx.theme().foreground)
             .refine_style(&self.style)
+            .child(FocusVisibleController)
             .child(TextSelectionLayer)
             .child(self.view.clone())
             .child(self.tooltip_overlay.clone())

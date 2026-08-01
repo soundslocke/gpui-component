@@ -6,8 +6,8 @@ use crate::{
 };
 use crate::{StyledExt as _, ThemeStyled as _};
 use gpui::{
-    AnyElement, App, ElementId, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    RenderOnce, SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Window, div,
+    AnyElement, App, ElementId, InteractiveElement, IntoElement, ParentElement, RenderOnce,
+    SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Window, div,
     prelude::FluentBuilder as _, px, relative, rems, svg,
 };
 use gpui_base::{CheckboxIndicator, spring};
@@ -336,11 +336,10 @@ impl RenderOnce for Checkbox {
                         .children(children),
                 )
             })
-            .on_mouse_down(MouseButton::Left, |_, window, _| {
-                // Preserve the legacy Checkbox behavior: pointer presses do
-                // not move focus, including while disabled.
-                window.prevent_default();
-            })
+            // Focus deliberately follows the click (GPUI's `div` does it for
+            // any tracked handle): the ring stays hidden while the pointer is
+            // driving, so the only effect is that a later Tab continues from
+            // the checkbox the user actually clicked.
             .map(|this| self.tooltip.apply(this))
     }
 }

@@ -7,6 +7,7 @@ use gpui::{
 pub use gpui_base::{FocusableExt, RoleOverride, StyledExt, box_shadow, h_flex, v_flex};
 
 use crate::ActiveTheme as _;
+use crate::focus_visible::focus_visible;
 
 const FOCUS_RING_WIDTH: Pixels = px(3.);
 const FOCUS_RING_OPACITY: f32 = 0.5;
@@ -176,6 +177,14 @@ impl<T: Styled + Sized> ThemeStyled for T {
     where
         Self: ParentElement,
     {
+        // The ring only appears while the user is on the keyboard, the way
+        // `:focus-visible` behaves on the web, so a control focused by click or
+        // by a component moving focus itself shows nothing. See
+        // [`focus_visible`](crate::focus_visible).
+        if !focus_visible(cx) {
+            return self;
+        }
+
         // The ring is painted outside the border, so a clipping ancestor cuts
         // it off. An application whose layout clips heavily turns it off in the
         // theme and keeps the tinted border, which takes no space.
