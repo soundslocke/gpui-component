@@ -22,12 +22,20 @@ type SidebarKeyHandler = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
 type SidebarMenuItemWrap =
     Rc<dyn Fn(Stateful<Div>, &mut Window, &mut App) -> Stateful<Div> + 'static>;
 
+/// A row of a [`SidebarMenu`]: either one of its own items or content the
+/// caller renders itself. See [`SidebarMenu::custom`].
+#[derive(Clone)]
+enum SidebarMenuRow {
+    Item(SidebarMenuItem),
+    Custom(Rc<dyn Fn(&mut Window, &mut App) -> AnyElement + 'static>),
+}
+
 /// Menu for the [`super::Sidebar`]
 #[derive(Clone)]
 pub struct SidebarMenu {
     style: StyleRefinement,
     collapsed: bool,
-    items: Vec<SidebarMenuItem>,
+    items: Vec<SidebarMenuRow>,
     focus_handle: Option<FocusHandle>,
     on_select_prev: Option<SidebarKeyHandler>,
     on_select_next: Option<SidebarKeyHandler>,
@@ -56,7 +64,7 @@ impl SidebarMenu {
     ///
     /// See also [`SidebarMenu::children`].
     pub fn child(mut self, child: impl Into<SidebarMenuItem>) -> Self {
-        self.items.push(child.into());
+        self.items.push(SidebarMenuRow::Item(child.into()));
         self
     }
 
@@ -65,7 +73,27 @@ impl SidebarMenu {
         mut self,
         children: impl IntoIterator<Item = impl Into<SidebarMenuItem>>,
     ) -> Self {
-        self.items = children.into_iter().map(Into::into).collect();
+        self.items = children
+            .into_iter()
+            .map(|child| SidebarMenuRow::Item(child.into()))
+            .collect();
+        self
+    }
+
+    /// Add a caller-rendered row to the menu, in sequence with its items.
+    ///
+    /// The menu lays the row out like any other and otherwise leaves it alone:
+    /// no item chrome, no collapsed handling, no keyboard participation. For
+    /// content that isn't a menu item at all, such as a section heading the
+    /// caller needs full control over.
+    pub fn custom<F, E>(mut self, builder: F) -> Self
+    where
+        F: Fn(&mut Window, &mut App) -> E + 'static,
+        E: IntoElement,
+    {
+        self.items.push(SidebarMenuRow::Custom(Rc::new(
+            move |window, cx| builder(window, cx).into_any_element(),
+        )));
         self
     }
 
@@ -191,13 +219,16 @@ impl SidebarItem for SidebarMenu {
                     }
                 })
             })
-            .children(self.items.into_iter().enumerate().map(|(ix, item)| {
-                let id = SharedString::from(format!("{}-{}", id, ix));
-                item.collapsed(collapsed)
-                    .with_parent_focused(parent_focused)
-                    .with_parent_focusable(parent_focusable)
-                    .render(id, window, cx)
-                    .into_any_element()
+            .children(self.items.into_iter().enumerate().map(|(ix, row)| match row {
+                SidebarMenuRow::Item(item) => {
+                    let id = SharedString::from(format!("{}-{}", id, ix));
+                    item.collapsed(collapsed)
+                        .with_parent_focused(parent_focused)
+                        .with_parent_focusable(parent_focusable)
+                        .render(id, window, cx)
+                        .into_any_element()
+                }
+                SidebarMenuRow::Custom(builder) => builder(window, cx),
             }))
     }
 }
