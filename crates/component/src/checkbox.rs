@@ -432,12 +432,14 @@ mod tests {
     }
 
     #[gpui::test]
-    fn facade_pointer_activation_fires_once_without_moving_focus(cx: &mut TestAppContext) {
+    fn facade_pointer_activation_fires_once_and_takes_focus(cx: &mut TestAppContext) {
         let (cx, clicks, _) = harness(cx, false);
         cx.simulate_click(point(px(10.), px(10.)), Modifiers::default());
 
         assert_eq!(clicks.get(), 1);
-        cx.update(|window, cx| assert!(window.focused(cx).is_none()));
+        // Focus follows the click; the ring stays hidden while the pointer
+        // drives, so a later Tab continues from the checkbox the user clicked.
+        cx.update(|window, cx| assert!(window.focused(cx).is_some()));
     }
 
     #[gpui::test]

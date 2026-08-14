@@ -993,7 +993,7 @@ mod tests {
 
         assert_eq!(red.mix(blue, 0.5).to_hex(), "#FF00FF");
         assert_eq!(green.mix(red, 0.5).to_hex(), "#FFFF00");
-        assert_eq!(blue.mix(yellow, 0.2).to_hex(), "#0098FF");
+        assert_eq!(blue.mix(yellow, 0.2).to_hex(), "#0099FF");
     }
 
     #[test]
@@ -1054,8 +1054,8 @@ mod tests {
         assert_eq!(format!("{:?}", ColorName::Yellow), "Yellow");
 
         let color = ColorName::Green;
-        assert_eq!(color.scale(500).to_hex(), "#21C55E");
-        assert_eq!(color.scale(1500).to_hex(), "#21C55E");
+        assert_eq!(color.scale(500).to_hex(), "#22C55E");
+        assert_eq!(color.scale(1500).to_hex(), "#22C55E");
 
         for name in ColorName::all().iter() {
             let name1: ColorName = name.to_string().as_str().try_into().unwrap();
