@@ -1,10 +1,10 @@
 use std::{cell::RefCell, rc::Rc};
 
 use gpui::{
-    Anchor, AnyElement, App, Context, DismissEvent, Element, ElementId, Entity, FocusHandle,
-    Focusable, GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, InteractiveElement,
-    IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, StyleRefinement,
-    Styled, Subscription, Window, anchored, deferred, div, prelude::FluentBuilder, px,
+    Anchor, AnyElement, App, Context, DismissEvent, Element, ElementId, Entity, Focusable,
+    GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, InteractiveElement, IntoElement,
+    MouseButton, MouseDownEvent, ParentElement, Pixels, Point, StyleRefinement, Styled,
+    Subscription, Window, anchored, deferred, div, prelude::FluentBuilder, px,
 };
 
 use crate::menu::PopupMenu;
@@ -137,7 +137,6 @@ struct ContextMenuSharedState {
     open: bool,
     position: Point<Pixels>,
     _subscription: Option<Subscription>,
-    previous_focus: Option<FocusHandle>,
 }
 
 pub struct ContextMenuState {
@@ -154,7 +153,6 @@ impl Default for ContextMenuState {
                 open: false,
                 position: Default::default(),
                 _subscription: None,
-                previous_focus: None,
             })),
         }
     }
@@ -190,7 +188,6 @@ impl<E: ParentElement + Styled + IntoElement + 'static> Element for ContextMenu<
                     let shared_state = state.shared_state.borrow();
                     (shared_state.position, shared_state.open)
                 };
-                let shared_state_rc = state.shared_state.clone();
                 let menu_view = state.shared_state.borrow().menu_view.clone();
                 let mut menu_element = None;
                 if open {
@@ -220,12 +217,6 @@ impl<E: ParentElement + Styled + IntoElement + 'static> Element for ContextMenu<
                                                         .focus_handle(cx)
                                                         .contains_focused(window, cx)
                                                     {
-                                                        // Save the currently focused element before
-                                                        // the menu takes focus, so we can restore it
-                                                        // when the menu is dismissed.
-                                                        shared_state_rc
-                                                            .borrow_mut()
-                                                            .previous_focus = window.focused(cx);
                                                         menu.focus_handle(cx).focus(window, cx);
                                                     }
 
@@ -356,9 +347,6 @@ impl<E: ParentElement + Styled + IntoElement + 'static> Element for ContextMenu<
                                     move |_, _: &DismissEvent, window, cx| {
                                         let mut state = shared_state.borrow_mut();
                                         state.open = false;
-                                        if let Some(handle) = state.previous_focus.take() {
-                                            handle.focus(window, cx);
-                                        }
                                         if let Some(on_close) = &on_close {
                                             on_close(window, cx);
                                         }
@@ -385,10 +373,10 @@ impl<E: ParentElement + Styled + IntoElement + 'static> Element for ContextMenu<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::theme::Theme;
+    use crate::{Root, theme::Theme};
     use gpui::{
-        Context, FocusHandle, IntoElement, Render, TestAppContext, VisualTestContext, actions,
-        point, px,
+        AppContext as _, Context, FocusHandle, IntoElement, Render, TestAppContext,
+        VisualTestContext, actions, point, px,
     };
     use std::cell::Cell;
 
@@ -482,5 +470,78 @@ mod tests {
         cx.update(|window, cx| {
             assert_eq!(window.focused(cx).as_ref(), Some(&content_focus));
         });
+    }
+
+    /// A menu item is free to open a dialog, which takes focus for itself.
+    /// The dismiss that follows must leave that focus alone: a dialog off the
+    /// focus path can be closed by neither its close button nor escape.
+    struct DialogFromMenuRoot {
+        content_focus: FocusHandle,
+    }
+
+    impl Render for DialogFromMenuRoot {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .size_full()
+                .child(
+                    div()
+                        .id("content")
+                        .h(px(40.))
+                        .track_focus(&self.content_focus),
+                )
+                .child(div().id("tab").h(px(60.)).context_menu(|menu, _, _| {
+                    menu.item(crate::menu::PopupMenuItem::new("Configure").on_click(
+                        |_, window, cx| {
+                            crate::WindowExt::open_dialog(window, cx, |dialog, _, _| {
+                                dialog.title("Configure")
+                            });
+                        },
+                    ))
+                }))
+                .children(Root::render_dialog_layer(window, cx))
+        }
+    }
+
+    #[gpui::test]
+    fn a_dialog_opened_from_a_menu_item_keeps_focus_and_closes(cx: &mut TestAppContext) {
+        cx.update(crate::init);
+
+        let (root, cx) = cx.add_window_view(|window, cx| {
+            let content_focus = cx.focus_handle();
+            content_focus.focus(window, cx);
+            let view = cx.new(|_| DialogFromMenuRoot { content_focus });
+            Root::new(view, window, cx)
+        });
+        let cx: &mut VisualTestContext = cx;
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            _ = window.draw(cx);
+        });
+
+        cx.simulate_event(MouseDownEvent {
+            button: MouseButton::Right,
+            position: point(px(50.), px(70.)),
+            modifiers: Default::default(),
+            click_count: 1,
+            first_mouse: false,
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            _ = window.draw(cx);
+        });
+
+        cx.simulate_keystrokes("down enter");
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            _ = window.draw(cx);
+        });
+        assert_eq!(root.read_with(cx, |root, _| root.active_dialogs.len()), 1);
+
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            _ = window.draw(cx);
+        });
+        assert_eq!(root.read_with(cx, |root, _| root.active_dialogs.len()), 0);
     }
 }
