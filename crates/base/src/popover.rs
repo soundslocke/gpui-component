@@ -2,9 +2,9 @@ use std::rc::Rc;
 
 use gpui::{
     Anchor, AnyElement, App, Context, DismissEvent, ElementId, EventEmitter, FocusHandle,
-    Focusable, InteractiveElement as _, IntoElement, KeyBinding, MouseButton, ParentElement as _,
-    Render, RenderOnce, Role, StatefulInteractiveElement as _, Subscription, Window, div,
-    prelude::FluentBuilder as _,
+    Focusable, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton,
+    ParentElement as _, Render, RenderOnce, Role, StatefulInteractiveElement as _, Subscription,
+    Window, div, prelude::FluentBuilder as _,
 };
 
 use crate::{
@@ -306,6 +306,33 @@ impl RenderOnce for Popover {
                     });
                     cx.notify(parent_view_id);
                 }
+            })
+            // Enter and Space on a focused trigger open the popover, as a
+            // button and a menu button are both expected to. GPUI turns those
+            // keystrokes into a click on the focused element itself, which is
+            // the trigger; the trigger is an opaque element by the time it
+            // reaches us and the open interaction lives out here on the
+            // wrapper, so that click never arrives. Key events do bubble along
+            // the focus path through this wrapper, so open from one instead.
+            //
+            // Only while closed: once open, focus moves into the content,
+            // whose own Enter and Space handling this must not preempt.
+            .when(!open, |this| {
+                this.on_key_down({
+                    let state = state.clone();
+                    move |event: &KeyDownEvent, window, cx| {
+                        let keystroke = &event.keystroke;
+                        if !matches!(keystroke.key.as_str(), "enter" | "space")
+                            || keystroke.modifiers.modified()
+                        {
+                            return;
+                        }
+
+                        cx.stop_propagation();
+                        state.update(cx, |state, cx| state.show(window, cx));
+                        cx.notify(parent_view_id);
+                    }
+                })
             });
         if !open {
             return popup.into_any_element();
@@ -439,6 +466,50 @@ mod tests {
         cx.update(|window, cx| window.draw(cx).clear(cx));
         assert!(cx.debug_bounds("base-popover-content").is_none());
         assert_eq!(&*changes.borrow(), &[true, false]);
+    }
+
+    struct KeyboardTriggerHarness {
+        focus_handle: FocusHandle,
+    }
+
+    impl Render for KeyboardTriggerHarness {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let focus_handle = self.focus_handle.clone();
+            Popover::new("keyboard-popover")
+                .trigger_with(move |_, _, _| {
+                    div()
+                        .id("trigger")
+                        .track_focus(&focus_handle)
+                        .child("Open")
+                        .into_any_element()
+                })
+                .content(|_, _, _| {
+                    div()
+                        .debug_selector(|| "keyboard-popover-content".into())
+                        .size(px(40.))
+                })
+        }
+    }
+
+    /// Enter on a focused trigger opens the popover. GPUI delivers keyboard
+    /// activation as a click on the focused element, which never reaches the
+    /// wrapper that owns the open interaction, so the popover handles the
+    /// keystroke itself.
+    #[gpui::test]
+    fn enter_on_a_focused_trigger_opens_the_popover(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::init);
+        let (view, cx) = cx.add_window_view(|_, cx| KeyboardTriggerHarness {
+            focus_handle: cx.focus_handle(),
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        assert!(cx.debug_bounds("keyboard-popover-content").is_none());
+
+        let focus_handle = cx.update(|_, cx| view.read(cx).focus_handle.clone());
+        cx.update(|window, cx| focus_handle.focus(window, cx));
+        cx.simulate_keystrokes("enter");
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+
+        assert!(cx.debug_bounds("keyboard-popover-content").is_some());
     }
 
     #[gpui::test]
