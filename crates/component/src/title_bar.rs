@@ -217,7 +217,9 @@ impl RenderOnce for ControlIcon {
         let active_bg = self.active_bg(cx);
         let icon = self.clone();
         let on_close_window = match &self {
-            ControlIcon::Close { on_close_window, .. } => on_close_window.clone(),
+            ControlIcon::Close {
+                on_close_window, ..
+            } => on_close_window.clone(),
             _ => None,
         };
 
@@ -306,7 +308,10 @@ impl RenderOnce for WindowControls {
                     ControlIcon::maximize()
                 })
             })
-            .child(ControlIcon::close(self.on_close_window, self.neutral_close_button))
+            .child(ControlIcon::close(
+                self.on_close_window,
+                self.neutral_close_button,
+            ))
     }
 }
 

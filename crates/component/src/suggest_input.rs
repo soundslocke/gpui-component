@@ -10,21 +10,21 @@
 //! input — the text input itself acts as the search field.
 
 use gpui::{
-    anchored, deferred, div, prelude::FluentBuilder, px, rems, AnyElement, App, AppContext, Bounds,
-    Context, Edges, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement,
-    ParentElement, Pixels, Render, RenderOnce, SharedString, Styled,
-    Subscription, Task, WeakEntity, Window,
+    AnyElement, App, AppContext, Bounds, Context, Edges, Entity, EventEmitter, FocusHandle,
+    Focusable, InteractiveElement, IntoElement, ParentElement, Pixels, Render, RenderOnce,
+    SharedString, Styled, Subscription, Task, WeakEntity, Window, anchored, deferred, div,
+    prelude::FluentBuilder, px, rems,
 };
 
 use crate::{
+    ActiveTheme, ElementExt as _, IndexPath, Selectable, Sizable, Size, StyleSized, StyledExt,
     actions::{Cancel, SelectDown, SelectUp},
     dialog::Confirm,
     global_state::GlobalState,
     h_flex,
     input::{Input, InputEvent, InputState},
     list::{List, ListDelegate, ListState},
-    v_flex, ActiveTheme, ElementExt as _, IndexPath, Selectable, Sizable, Size, StyleSized,
-    StyledExt,
+    v_flex,
 };
 
 // ---------------------------------------------------------------------------
@@ -190,9 +190,8 @@ impl SuggestInputState {
         cx: &mut Context<Self>,
     ) -> Self {
         let items: Vec<SharedString> = items.into_iter().map(|s| s.into()).collect();
-        let input: Entity<InputState> = cx.new(|cx| {
-            InputState::new(window, cx).placeholder(SharedString::from("Search..."))
-        });
+        let input: Entity<InputState> =
+            cx.new(|cx| InputState::new(window, cx).placeholder(SharedString::from("Search...")));
         let weak = cx.entity().downgrade();
 
         let list: Entity<ListState<SuggestDelegate>> = cx.new(|cx| {
@@ -228,11 +227,7 @@ impl SuggestInputState {
                             // search.
                             let _ = list.delegate_mut().perform_search(&text, window, cx);
                             let has_items = !list.delegate().matched_items.is_empty();
-                            list.set_selected_index(
-                                has_items.then(IndexPath::default),
-                                window,
-                                cx,
-                            );
+                            list.set_selected_index(has_items.then(IndexPath::default), window, cx);
                             cx.notify();
                         });
                         // Suppress the popup when the input value already
@@ -243,8 +238,7 @@ impl SuggestInputState {
                         // the now-singleton filter, and we keep the popup
                         // closed instead of re-opening it.
                         let matched = &list_for_sub.read(cx).delegate().matched_items;
-                        let redundant =
-                            matched.len() == 1 && matched[0] == *text.as_str();
+                        let redundant = matched.len() == 1 && matched[0] == *text.as_str();
                         if redundant {
                             if this.open {
                                 this.set_open(false, cx);
@@ -256,37 +250,28 @@ impl SuggestInputState {
                     }
                     InputEvent::PressEnter { .. } => {
                         if this.open {
-                            list_for_sub.update(
-                                cx,
-                                |list: &mut ListState<SuggestDelegate>, cx| {
-                                    list.confirm_selection(window, cx);
-                                },
-                            );
+                            list_for_sub.update(cx, |list: &mut ListState<SuggestDelegate>, cx| {
+                                list.confirm_selection(window, cx);
+                            });
                         }
                     }
                     InputEvent::Focus => {
                         if !this.open {
                             let text = input_for_sub.read(cx).value().to_string();
-                            list_for_sub.update(
-                                cx,
-                                |list: &mut ListState<SuggestDelegate>, cx| {
-                                    let _ =
-                                        list.delegate_mut().perform_search(&text, window, cx);
-                                    let has_items =
-                                        !list.delegate().matched_items.is_empty();
-                                    list.set_selected_index(
-                                        has_items.then(IndexPath::default),
-                                        window,
-                                        cx,
-                                    );
-                                    cx.notify();
-                                },
-                            );
+                            list_for_sub.update(cx, |list: &mut ListState<SuggestDelegate>, cx| {
+                                let _ = list.delegate_mut().perform_search(&text, window, cx);
+                                let has_items = !list.delegate().matched_items.is_empty();
+                                list.set_selected_index(
+                                    has_items.then(IndexPath::default),
+                                    window,
+                                    cx,
+                                );
+                                cx.notify();
+                            });
                             // Don't open if the current value is already an
                             // exact match for the only filtered item.
                             let matched = &list_for_sub.read(cx).delegate().matched_items;
-                            let redundant =
-                                matched.len() == 1 && matched[0] == *text.as_str();
+                            let redundant = matched.len() == 1 && matched[0] == *text.as_str();
                             if !redundant {
                                 this.set_open(true, cx);
                             }
@@ -304,11 +289,8 @@ impl SuggestInputState {
                         if !this.open {
                             return;
                         }
-                        let list_focused = this
-                            .list
-                            .read(cx)
-                            .focus_handle
-                            .contains_focused(window, cx);
+                        let list_focused =
+                            this.list.read(cx).focus_handle.contains_focused(window, cx);
                         if !list_focused {
                             this.set_open(false, cx);
                         }
@@ -478,35 +460,33 @@ impl RenderOnce for SuggestInput {
             .when(show_popup, |this: gpui::Stateful<gpui::Div>| {
                 this.child(
                     deferred(
-                        anchored()
-                            .snap_to_window_with_margin(px(8.))
-                            .child(
-                                div()
-                                    .occlude()
-                                    .w(bounds.size.width)
-                                    .child(
-                                        v_flex()
-                                            .occlude()
-                                            .mt_1p5()
-                                            .bg(cx.theme().background)
-                                            .border_1()
-                                            .border_color(cx.theme().border)
-                                            .rounded(popup_radius)
-                                            .shadow_md()
-                                            .child(
-                                                List::new(&list)
-                                                    .with_size(self.size)
-                                                    .max_h(rems(15.))
-                                                    .paddings(Edges::all(px(4.))),
-                                            ),
-                                    )
-                                    .on_mouse_down_out({
-                                        let state = state_entity.clone();
-                                        move |_, _, cx| {
-                                            state.update(cx, |s, cx| s.set_open(false, cx));
-                                        }
-                                    }),
-                            ),
+                        anchored().snap_to_window_with_margin(px(8.)).child(
+                            div()
+                                .occlude()
+                                .w(bounds.size.width)
+                                .child(
+                                    v_flex()
+                                        .occlude()
+                                        .mt_1p5()
+                                        .bg(cx.theme().background)
+                                        .border_1()
+                                        .border_color(cx.theme().border)
+                                        .rounded(popup_radius)
+                                        .shadow_md()
+                                        .child(
+                                            List::new(&list)
+                                                .with_size(self.size)
+                                                .max_h(rems(15.))
+                                                .paddings(Edges::all(px(4.))),
+                                        ),
+                                )
+                                .on_mouse_down_out({
+                                    let state = state_entity.clone();
+                                    move |_, _, cx| {
+                                        state.update(cx, |s, cx| s.set_open(false, cx));
+                                    }
+                                }),
+                        ),
                     )
                     .with_priority(1),
                 )

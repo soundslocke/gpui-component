@@ -91,9 +91,10 @@ impl SidebarMenu {
         F: Fn(&mut Window, &mut App) -> E + 'static,
         E: IntoElement,
     {
-        self.items.push(SidebarMenuRow::Custom(Rc::new(
-            move |window, cx| builder(window, cx).into_any_element(),
-        )));
+        self.items
+            .push(SidebarMenuRow::Custom(Rc::new(move |window, cx| {
+                builder(window, cx).into_any_element()
+            })));
         self
     }
 
@@ -219,17 +220,22 @@ impl SidebarItem for SidebarMenu {
                     }
                 })
             })
-            .children(self.items.into_iter().enumerate().map(|(ix, row)| match row {
-                SidebarMenuRow::Item(item) => {
-                    let id = SharedString::from(format!("{}-{}", id, ix));
-                    item.collapsed(collapsed)
-                        .with_parent_focused(parent_focused)
-                        .with_parent_focusable(parent_focusable)
-                        .render(id, window, cx)
-                        .into_any_element()
-                }
-                SidebarMenuRow::Custom(builder) => builder(window, cx),
-            }))
+            .children(
+                self.items
+                    .into_iter()
+                    .enumerate()
+                    .map(|(ix, row)| match row {
+                        SidebarMenuRow::Item(item) => {
+                            let id = SharedString::from(format!("{}-{}", id, ix));
+                            item.collapsed(collapsed)
+                                .with_parent_focused(parent_focused)
+                                .with_parent_focusable(parent_focusable)
+                                .render(id, window, cx)
+                                .into_any_element()
+                        }
+                        SidebarMenuRow::Custom(builder) => builder(window, cx),
+                    }),
+            )
     }
 }
 

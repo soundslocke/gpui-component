@@ -143,29 +143,29 @@ impl ColorPicker {
         // Keyed by position rather than by hex: a color repeated in the
         // featured row and a palette row would otherwise collide on element id.
         ColorSwatch::new(id, color)
-        .selected(selected)
-        .h_5()
-        .w_5()
-        .bg(color)
-        .border_1()
-        .border_color(color.darken(0.1))
-        .hover(|this| this.border_color(color.darken(0.3)).bg(color.lighten(0.1)))
-        .active(|this| this.border_color(color.darken(0.5)).bg(color.darken(0.2)))
-        .on_hover(move |color, entered, window, cx| {
-            hover_state.update(cx, |state, cx| {
-                if entered {
-                    state.preview_color(color, window, cx);
-                } else {
-                    // Restore the committed color when the cursor leaves, so
-                    // the hex field and swatch don't stay stuck on whichever
-                    // swatch was hovered last.
-                    state.clear_preview(window, cx);
-                }
-            });
-        })
-        .on_click(move |color, _, window, cx| {
-            click_state.update(cx, |state, cx| state.select_color(color, window, cx));
-        })
+            .selected(selected)
+            .h_5()
+            .w_5()
+            .bg(color)
+            .border_1()
+            .border_color(color.darken(0.1))
+            .hover(|this| this.border_color(color.darken(0.3)).bg(color.lighten(0.1)))
+            .active(|this| this.border_color(color.darken(0.5)).bg(color.darken(0.2)))
+            .on_hover(move |color, entered, window, cx| {
+                hover_state.update(cx, |state, cx| {
+                    if entered {
+                        state.preview_color(color, window, cx);
+                    } else {
+                        // Restore the committed color when the cursor leaves, so
+                        // the hex field and swatch don't stay stuck on whichever
+                        // swatch was hovered last.
+                        state.clear_preview(window, cx);
+                    }
+                });
+            })
+            .on_click(move |color, _, window, cx| {
+                click_state.update(cx, |state, cx| state.select_color(color, window, cx));
+            })
     }
 
     fn render_colors(&self, window: &mut Window, cx: &mut App) -> impl IntoElement {
@@ -258,18 +258,16 @@ impl ColorPicker {
                 ),
             )
             .child(Separator::horizontal())
-            .child(
-                v_flex()
-                    .gap_1()
-                    .children(palettes.iter().enumerate().map(|(row, sub_colors)| {
-                        let len = sub_colors.len();
-                        h_flex().gap_1().children(
-                            sub_colors.iter().rev().enumerate().map(|(col, color)| {
-                                self.render_item(("palette", row * len + col), *color, cx)
-                            }),
-                        )
-                    })),
-            )
+            .child(v_flex().gap_1().children(palettes.iter().enumerate().map(
+                |(row, sub_colors)| {
+                    let len = sub_colors.len();
+                    h_flex()
+                        .gap_1()
+                        .children(sub_colors.iter().rev().enumerate().map(|(col, color)| {
+                            self.render_item(("palette", row * len + col), *color, cx)
+                        }))
+                },
+            )))
     }
 
     fn render_slider_tab_panel(&self, slider_color: Hsla, cx: &mut App) -> impl IntoElement {

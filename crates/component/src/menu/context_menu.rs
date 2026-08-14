@@ -1,10 +1,10 @@
 use std::{cell::RefCell, rc::Rc};
 
 use gpui::{
-    Anchor, AnyElement, App, Context, DismissEvent, Element, ElementId, Entity, Focusable, FocusHandle,
-    GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, InteractiveElement, IntoElement,
-    MouseButton, MouseDownEvent, ParentElement, Pixels, Point, StyleRefinement, Styled,
-    Subscription, Window, anchored, deferred, div, prelude::FluentBuilder, px,
+    Anchor, AnyElement, App, Context, DismissEvent, Element, ElementId, Entity, FocusHandle,
+    Focusable, GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, InteractiveElement,
+    IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, StyleRefinement,
+    Styled, Subscription, Window, anchored, deferred, div, prelude::FluentBuilder, px,
 };
 
 use crate::menu::PopupMenu;
@@ -223,8 +223,9 @@ impl<E: ParentElement + Styled + IntoElement + 'static> Element for ContextMenu<
                                                         // Save the currently focused element before
                                                         // the menu takes focus, so we can restore it
                                                         // when the menu is dismissed.
-                                                        shared_state_rc.borrow_mut().previous_focus =
-                                                            window.focused(cx);
+                                                        shared_state_rc
+                                                            .borrow_mut()
+                                                            .previous_focus = window.focused(cx);
                                                         menu.focus_handle(cx).focus(window, cx);
                                                     }
 

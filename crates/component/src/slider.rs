@@ -219,11 +219,9 @@ impl RenderOnce for Slider {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let axis = self.axis;
         let focus_handle = window
-            .use_keyed_state(
-                ("slider-focus", self.state.entity_id()),
-                cx,
-                |_, cx| cx.focus_handle(),
-            )
+            .use_keyed_state(("slider-focus", self.state.entity_id()), cx, |_, cx| {
+                cx.focus_handle()
+            })
             .read(cx)
             .clone();
         // Only show the focus ring when focus arrived via keyboard navigation
@@ -470,14 +468,10 @@ impl RenderOnce for Slider {
                                         div()
                                             .absolute()
                                             .when(axis.is_horizontal(), |this| {
-                                                this.h_full()
-                                                    .left(thumb_radius)
-                                                    .right(thumb_radius)
+                                                this.h_full().left(thumb_radius).right(thumb_radius)
                                             })
                                             .when(axis.is_vertical(), |this| {
-                                                this.w_full()
-                                                    .top(thumb_radius)
-                                                    .bottom(thumb_radius)
+                                                this.w_full().top(thumb_radius).bottom(thumb_radius)
                                             })
                                             .when(self.show_fill, |this| {
                                                 this.child(

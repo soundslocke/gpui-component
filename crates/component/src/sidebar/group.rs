@@ -110,9 +110,7 @@ impl<E: SidebarItem> SidebarItem for SidebarGroup<E> {
                         .h_8()
                         .items_center()
                         .child(div().flex_1().child(label))
-                        .when_some(suffix, |this, suffix| {
-                            this.child(suffix(window, cx))
-                        })
+                        .when_some(suffix, |this, suffix| this.child(suffix(window, cx)))
                         .when(bottom_border, |this| {
                             this.border_b_1()
                                 .border_color(cx.theme().sidebar_border)
