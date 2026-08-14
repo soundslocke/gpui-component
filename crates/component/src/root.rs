@@ -613,7 +613,7 @@ impl Render for Root {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::TestAppContext;
+    use gpui::{Focusable as _, TestAppContext};
 
     struct TestView;
 
@@ -644,5 +644,75 @@ mod tests {
             Root::new(view, window, cx).bordered(false).bordered(true)
         });
         assert!(root.read_with(cx, |root, _| root.bordered));
+    }
+
+    struct FocusableTestView {
+        focus_handle: FocusHandle,
+    }
+
+    impl Render for FocusableTestView {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .track_focus(&self.focus_handle)
+                .size_full()
+                .children(Root::render_dialog_layer(window, cx))
+        }
+    }
+
+    #[gpui::test]
+    fn escape_closes_a_dialog_opened_while_a_view_is_focused(cx: &mut TestAppContext) {
+        cx.update(crate::init);
+
+        let (root, cx) = cx.add_window_view(|window, cx| {
+            let view = cx.new(|cx| FocusableTestView {
+                focus_handle: cx.focus_handle(),
+            });
+            Root::new(view, window, cx)
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+
+        cx.update(|window, cx| {
+            crate::WindowExt::open_dialog(window, cx, |dialog, _, _| dialog.title("Test"))
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        assert_eq!(root.read_with(cx, |root, _| root.active_dialogs.len()), 1);
+
+        cx.simulate_keystrokes("escape");
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        assert_eq!(root.read_with(cx, |root, _| root.active_dialogs.len()), 0);
+    }
+
+    #[gpui::test]
+    fn escape_closes_a_dialog_from_an_input_inside_it(cx: &mut TestAppContext) {
+        cx.update(crate::init);
+
+        let (root, cx) = cx.add_window_view(|window, cx| {
+            let view = cx.new(|cx| FocusableTestView {
+                focus_handle: cx.focus_handle(),
+            });
+            Root::new(view, window, cx)
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+
+        let input = cx.update(|window, cx| cx.new(|cx| InputState::new(window, cx)));
+        cx.update(|window, cx| {
+            let input = input.clone();
+            crate::WindowExt::open_dialog(window, cx, move |dialog, _, _| {
+                let input = input.clone();
+                dialog
+                    .title("Test")
+                    .content(move |content, _, _| content.child(crate::input::Input::new(&input)))
+            });
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.update(|window, cx| {
+            let focus = input.read(cx).focus_handle(cx);
+            window.focus(&focus, cx);
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+
+        cx.simulate_keystrokes("escape");
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        assert_eq!(root.read_with(cx, |root, _| root.active_dialogs.len()), 0);
     }
 }

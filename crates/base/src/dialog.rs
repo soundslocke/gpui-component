@@ -603,6 +603,54 @@ mod tests {
         }
     }
 
+    struct DialogHarness {
+        focus: FocusHandle,
+        cancels: Rc<RefCell<usize>>,
+    }
+    impl Render for DialogHarness {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let cancels = self.cancels.clone();
+            Dialog::new(cx)
+                .focus_handle(self.focus.clone())
+                .on_cancel(move |_, _, _| {
+                    *cancels.borrow_mut() += 1;
+                    true
+                })
+                .popup(
+                    div()
+                        .debug_selector(|| "dialog-popup".into())
+                        .size(px(100.)),
+                )
+        }
+    }
+
+    /// Both ways of asking a dialog to close route the `Cancel` action along
+    /// the focus path: the close button dispatches it, escape is bound to it
+    /// in the dialog's key context.
+    #[gpui::test]
+    fn cancel_action_and_escape_reach_a_focused_dialog(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::init);
+        let cancels = Rc::new(RefCell::new(0));
+        let (view, cx) = cx.add_window_view({
+            let cancels = cancels.clone();
+            move |_, cx| DialogHarness {
+                focus: cx.focus_handle(),
+                cancels,
+            }
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        assert!(cx.debug_bounds("dialog-popup").is_some());
+
+        let focus = cx.update(|_, cx| view.read(cx).focus.clone());
+        cx.update(|window, cx| focus.focus(window, cx));
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+
+        cx.update(|window, cx| focus.dispatch_action(&Cancel, window, cx));
+        assert_eq!(*cancels.borrow(), 1);
+        cx.simulate_keystrokes("escape");
+        assert_eq!(*cancels.borrow(), 2);
+    }
+
     #[gpui::test]
     fn trigger_opens_shared_handle_and_reports_reason(cx: &mut gpui::TestAppContext) {
         let handle = DialogHandle::new(false);
