@@ -328,34 +328,52 @@ impl Root {
             .and_then(|h| h.upgrade())
     }
 
-    pub fn close_dialog(&mut self, window: &mut Window, cx: &mut Context<'_, Root>) {
-        if let Some(handle) = self.close_dialog_internal() {
-            window.focus(&handle, cx);
+    /// Hand focus back to the element that had it before the dialog opened.
+    ///
+    /// The saved handle can outlive the element that rendered it: a menu item
+    /// or popover row that opens a dialog is gone by the time the dialog
+    /// closes. Focusing it then would leave the window focused on an element
+    /// that is not in the dispatch tree, which strands key dispatch at the
+    /// window root and silently kills every keyboard shortcut until the user
+    /// clicks something. Blurring instead leaves focus in a state views can
+    /// detect and reclaim.
+    fn restore_focus(handle: Option<FocusHandle>, window: &mut Window, cx: &mut App) {
+        match handle {
+            Some(handle) if handle.is_rendered(window) => window.focus(&handle, cx),
+            _ => window.blur(),
         }
+    }
+
+    pub fn close_dialog(&mut self, window: &mut Window, cx: &mut Context<'_, Root>) {
+        let handle = self.close_dialog_internal();
+        Self::restore_focus(handle, window, cx);
         gpui_base::TextSelection::clear(window, cx);
         cx.notify();
     }
 
     pub(crate) fn defer_close_dialog(&mut self, window: &mut Window, cx: &mut Context<'_, Root>) {
-        if let Some(handle) = self.close_dialog_internal() {
-            let dialogs_count = self.active_dialogs.len();
+        let handle = self.close_dialog_internal();
+        let dialogs_count = self.active_dialogs.len();
 
-            // Save for new dialogs opened during animation to maintain focus chain
-            self.pending_focus_restore = Some(handle.downgrade());
+        // Save for new dialogs opened during animation to maintain focus chain
+        self.pending_focus_restore = handle.as_ref().map(|handle| handle.downgrade());
 
-            cx.spawn_in(window, async move |this, cx| {
-                cx.background_executor().timer(*ANIMATION_DURATION).await;
-                let _ = this.update_in(cx, |this, window, cx| {
-                    let current_dialogs_count = this.active_dialogs.len();
-                    // Only restore focus if no new dialogs were opened during animation
-                    if current_dialogs_count == dialogs_count {
-                        window.focus(&handle, cx);
-                    }
-                    this.pending_focus_restore = None;
-                });
-            })
-            .detach();
-        }
+        cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor().timer(*ANIMATION_DURATION).await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                let current_dialogs_count = this.active_dialogs.len();
+                // Only restore focus if no new dialogs were opened during animation
+                if current_dialogs_count == dialogs_count {
+                    // Re-checked here rather than at close time: the target has
+                    // had the whole animation to disappear from the tree.
+                    Self::restore_focus(handle, window, cx);
+                }
+                this.pending_focus_restore = None;
+                cx.notify();
+            });
+        })
+        .detach();
+
         gpui_base::TextSelection::clear(window, cx);
         cx.notify();
     }
@@ -367,9 +385,11 @@ impl Root {
             .first()
             .and_then(|d| d.previous_focused_handle.clone());
         self.active_dialogs.clear();
-        if let Some(handle) = previous_focused_handle.and_then(|h| h.upgrade()) {
-            window.focus(&handle, cx);
-        }
+        Self::restore_focus(
+            previous_focused_handle.and_then(|h| h.upgrade()),
+            window,
+            cx,
+        );
         gpui_base::TextSelection::clear(window, cx);
         cx.notify();
     }
@@ -407,14 +427,12 @@ impl Root {
 
     pub fn close_sheet(&mut self, window: &mut Window, cx: &mut Context<'_, Root>) {
         self.focused_input = None;
-        if let Some(previous_handle) = self
+        let previous_handle = self
             .active_sheet
             .as_ref()
             .and_then(|s| s.previous_focused_handle.as_ref())
-            .and_then(|h| h.upgrade())
-        {
-            window.focus(&previous_handle, cx);
-        }
+            .and_then(|h| h.upgrade());
+        Self::restore_focus(previous_handle, window, cx);
         self.active_sheet = None;
         gpui_base::TextSelection::clear(window, cx);
         cx.notify();
@@ -714,5 +732,147 @@ mod tests {
         cx.simulate_keystrokes("escape");
         cx.update(|window, cx| window.draw(cx).clear(cx));
         assert_eq!(root.read_with(cx, |root, _| root.active_dialogs.len()), 0);
+    }
+
+    actions!(root_tests, [Shortcut]);
+
+    struct ShortcutTestView {
+        focus_handle: FocusHandle,
+        /// When true, render a focusable trigger that is removed from the tree
+        /// while the dialog is open (mirrors a menu item that unmounts).
+        render_trigger: bool,
+        trigger_focus: FocusHandle,
+        /// Mirrors what an app view does: take focus back when nothing in the
+        /// window holds it.
+        reclaim_focus: bool,
+        fired: Rc<std::cell::Cell<usize>>,
+    }
+
+    impl Render for ShortcutTestView {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            if self.reclaim_focus && window.focused(cx).is_none() {
+                window.focus(&self.focus_handle, cx);
+            }
+
+            let fired = self.fired.clone();
+            div()
+                .track_focus(&self.focus_handle)
+                .size_full()
+                .on_action(move |_: &Shortcut, _, _| fired.set(fired.get() + 1))
+                .when(self.render_trigger, |this| {
+                    this.child(div().track_focus(&self.trigger_focus).size_full())
+                })
+                .children(Root::render_dialog_layer(window, cx))
+        }
+    }
+
+    fn shortcut_harness(
+        cx: &mut TestAppContext,
+        reclaim_focus: bool,
+    ) -> (
+        Entity<ShortcutTestView>,
+        &mut gpui::VisualTestContext,
+        Rc<std::cell::Cell<usize>>,
+    ) {
+        cx.update(crate::init);
+        cx.update(|cx| cx.bind_keys([KeyBinding::new("ctrl-shift-x", Shortcut, None)]));
+
+        let fired = Rc::new(std::cell::Cell::new(0));
+        let view_fired = fired.clone();
+        let (root, cx) = cx.add_window_view(move |window, cx| {
+            let view = cx.new(|cx| ShortcutTestView {
+                focus_handle: cx.focus_handle(),
+                render_trigger: true,
+                trigger_focus: cx.focus_handle(),
+                reclaim_focus,
+                fired: view_fired,
+            });
+            Root::new(view, window, cx)
+        });
+        let view = root.read_with(cx, |root, _| root.view.clone());
+        let view = view.downcast::<ShortcutTestView>().unwrap();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        (view, cx, fired)
+    }
+
+    fn open_and_escape_a_dialog(cx: &mut gpui::VisualTestContext) {
+        cx.update(|window, cx| {
+            crate::WindowExt::open_dialog(window, cx, |dialog, _, _| dialog.title("Test"))
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.simulate_keystrokes("escape");
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+    }
+
+    /// Baseline: the element that opened the dialog is still on screen when it
+    /// closes, so focus goes back to it and its shortcuts keep working.
+    #[gpui::test]
+    fn closing_a_dialog_restores_focus_to_the_opener(cx: &mut TestAppContext) {
+        let (view, cx, fired) = shortcut_harness(cx, false);
+
+        let focus = view.read_with(cx, |view, _| view.focus_handle.clone());
+        cx.update(|window, cx| window.focus(&focus, cx));
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+
+        open_and_escape_a_dialog(cx);
+
+        assert!(cx.update(|window, _| focus.is_focused(window)));
+        cx.simulate_keystrokes("ctrl-shift-x");
+        assert_eq!(fired.get(), 1);
+    }
+
+    /// The element that opened the dialog is gone by the time it closes (a menu
+    /// item, a popover row). Focus must not be restored onto it: an element
+    /// that no longer renders is not in the dispatch tree, so key dispatch
+    /// would fall back to the window root and every shortcut would go dead.
+    #[gpui::test]
+    fn closing_a_dialog_does_not_focus_a_removed_opener(cx: &mut TestAppContext) {
+        let (view, cx, _) = shortcut_harness(cx, false);
+
+        let trigger = view.read_with(cx, |view, _| view.trigger_focus.clone());
+        cx.update(|window, cx| window.focus(&trigger, cx));
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+
+        cx.update(|window, cx| {
+            crate::WindowExt::open_dialog(window, cx, |dialog, _, _| dialog.title("Test"))
+        });
+        view.update(cx, |view, cx| {
+            view.render_trigger = false;
+            cx.notify();
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.simulate_keystrokes("escape");
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+
+        assert!(cx.update(|window, cx| window.focused(cx)).is_none());
+    }
+
+    /// Nothing held focus when the dialog opened, so there is nothing to
+    /// restore. Focus must not be left on the dismissed dialog either.
+    #[gpui::test]
+    fn closing_a_dialog_clears_focus_when_there_is_nothing_to_restore(cx: &mut TestAppContext) {
+        let (_view, cx, _) = shortcut_harness(cx, false);
+
+        cx.update(|window, _| window.blur());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+
+        open_and_escape_a_dialog(cx);
+
+        assert!(cx.update(|window, cx| window.focused(cx)).is_none());
+    }
+
+    /// End to end: with no opener to restore, a view that claims focus when the
+    /// window has none gets its shortcuts back without the user clicking first.
+    #[gpui::test]
+    fn a_view_can_reclaim_focus_after_a_dialog_closes(cx: &mut TestAppContext) {
+        let (_view, cx, fired) = shortcut_harness(cx, true);
+
+        cx.update(|window, _| window.blur());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+
+        open_and_escape_a_dialog(cx);
+
+        cx.simulate_keystrokes("ctrl-shift-x");
+        assert_eq!(fired.get(), 1);
     }
 }
