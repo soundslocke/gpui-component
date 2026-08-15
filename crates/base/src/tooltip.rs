@@ -6,7 +6,7 @@ use gpui::{
     Task, Window, deferred, div, prelude::FluentBuilder as _, px,
 };
 
-use crate::{Placement, Positioner};
+use crate::{Placement, Positioner, layer::TOOLTIP_PRIORITY};
 
 const TOOLTIP_PRIORITY: usize = 200;
 const WINDOW_MARGIN: Pixels = px(4.);

@@ -12,7 +12,7 @@ use gpui::{
 use smallvec::SmallVec;
 
 use crate::actions::{Cancel, Confirm};
-use crate::{FocusTrapElement as _, StyledExt as _};
+use crate::{FocusTrapElement as _, StyledExt as _, layer::DIALOG_PRIORITY};
 
 const CONTEXT: &str = "Dialog";
 type Decision = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) -> bool>;
@@ -583,7 +583,7 @@ impl RenderOnce for Dialog {
                     .refine_style(&self.style),
             ),
         )
-        .with_priority(10 + self.layer)
+        .with_priority(DIALOG_PRIORITY + self.layer)
         .into_any_element()
     }
 }

@@ -31,6 +31,7 @@ mod history;
 mod hover_card;
 mod index_path;
 pub mod input;
+mod layer;
 mod link;
 mod list_settings;
 #[cfg(all(target_os = "macos", not(test)))]
@@ -108,6 +109,7 @@ pub use history::History;
 pub use hover_card::{HoverCard, HoverCardState};
 pub use index_path::IndexPath;
 pub use input::{Editor, Input, InputBase, InputStyles, Textarea};
+pub use layer::{DIALOG_PRIORITY, POPUP_PRIORITY, TOOLTIP_PRIORITY};
 pub use link::{Link, LinkStyles};
 pub use list_settings::ListSettings;
 #[cfg(all(target_os = "macos", not(test)))]
@@ -131,7 +133,7 @@ pub use number_input::{
 pub use otp_input::{OtpEvent, OtpInput, OtpState};
 pub use pagination::{Pagination, PaginationItem, PaginationState};
 pub use popover::{Popover, PopoverState};
-pub use popup::{POPUP_PRIORITY, Popup};
+pub use popup::Popup;
 pub use positioner::{Align, Positioner, ResolvedPosition};
 pub use progress::{Progress, ProgressIndicator, ProgressTrack};
 pub use radio::{Radio, RadioStyles};

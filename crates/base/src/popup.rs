@@ -6,13 +6,10 @@ use gpui::{
     StyleRefinement, Styled, Window, deferred, div, px,
 };
 
-use crate::{ElementExt as _, Positioner, StyledExt as _};
+use crate::{ElementExt as _, Positioner, StyledExt as _, layer::POPUP_PRIORITY};
 
 /// Distance kept between a popup and the window edge.
 const WINDOW_MARGIN: Pixels = px(8.);
-
-/// Deferred paint priority for interactive surfaces that must appear above dialogs.
-pub const POPUP_PRIORITY: usize = 100;
 
 #[derive(Default)]
 struct PopupAnchorState {
