@@ -16,7 +16,9 @@ use crate::plot::shape::{Arc, ArcData};
 #[derive(IntoElement)]
 pub struct ProgressCircle {
     id: ElementId,
-    style: StyleRefinement,
+    /// Boxed because a `ButtonIconVariant` stores this whole struct inline, and
+    /// an inline `StyleRefinement` is 640 bytes of it.
+    style: Option<Box<StyleRefinement>>,
     color: Option<Hsla>,
     value: f32,
     accessibility_label: Option<SharedString>,
@@ -33,7 +35,7 @@ impl ProgressCircle {
             value: Default::default(),
             color: None,
             accessibility_label: None,
-            style: StyleRefinement::default(),
+            style: None,
             size: Size::default(),
             children: Vec::new(),
             loading: false,
@@ -142,7 +144,7 @@ impl ProgressCircle {
 
 impl Styled for ProgressCircle {
     fn style(&mut self) -> &mut StyleRefinement {
-        &mut self.style
+        self.style.get_or_insert_default()
     }
 }
 
@@ -192,7 +194,9 @@ impl RenderOnce for ProgressCircle {
                 Size::Large => this.size_5(),
                 Size::Size(s) => this.size(s * 0.75),
             })
-            .refine_style(&self.style)
+            .when_some(self.style.as_deref(), |this, style| {
+                this.refine_style(style)
+            })
             .children(self.children)
             .map(|this| {
                 if loading {
