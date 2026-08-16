@@ -248,7 +248,10 @@ impl Styled for SidebarMenu {
 /// Menu item for the [`SidebarMenu`]
 #[derive(Clone)]
 pub struct SidebarMenuItem {
-    icon: Option<Icon>,
+    /// Boxed because a built `Icon` is ~2 KB (it owns an `Svg` element and
+    /// two `StyleRefinement`s), which would otherwise dominate this struct.
+    /// See the size assertion below [`SidebarMenuItem`].
+    icon: Option<Box<Icon>>,
     label: SharedString,
     subtitle: Option<SharedString>,
     detail: Option<Rc<dyn Fn(&mut Window, &mut App) -> AnyElement + 'static>>,
@@ -279,6 +282,13 @@ pub struct SidebarMenuItem {
     /// selected item between mouse-down and the click handler running).
     parent_focusable: bool,
 }
+
+/// A menu holds these in a `Vec`, and each one can hold more of them as
+/// `children`, so the struct has to stay small. It reached 2224 bytes once by
+/// storing a built `Icon` inline, which made `SidebarMenuRow` pay that for
+/// every row including its 16-byte custom variant. Box anything large rather
+/// than raising this.
+const _: () = assert!(std::mem::size_of::<SidebarMenuItem>() <= 192);
 
 impl SidebarMenuItem {
     /// Create a new [`SidebarMenuItem`] with a label.
@@ -327,7 +337,7 @@ impl SidebarMenuItem {
 
     /// Set the icon for the menu item
     pub fn icon(mut self, icon: impl Into<Icon>) -> Self {
-        self.icon = Some(icon.into());
+        self.icon = Some(Box::new(icon.into()));
         self
     }
 
@@ -584,7 +594,7 @@ impl SidebarItem for SidebarMenuItem {
                                 .rounded(cx.theme().radius),
                         )
                     })
-                    .when_some(self.icon.clone(), |this, icon| this.child(icon))
+                    .when_some(self.icon.clone(), |this, icon| this.child(*icon))
                     .when(is_collapsed, |this| {
                         this.justify_center().when(is_active, |this| {
                             this.bg(cx.theme().tokens.sidebar_accent)
