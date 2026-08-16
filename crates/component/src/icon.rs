@@ -47,37 +47,34 @@ impl RenderOnce for IconName {
     }
 }
 
-#[derive(IntoElement)]
+/// An icon.
+///
+/// This is a description of an icon, not a built element: the `svg()` it
+/// renders to is created in `render`. Keep it that way. Types all over the
+/// crate store an `Option<Icon>` inline, so every byte here is paid many times
+/// over, and a stored `gpui::Svg` alone costs 1344 of them.
+#[derive(IntoElement, Default)]
 pub struct Icon {
-    base: Svg,
-    style: StyleRefinement,
+    style: Option<Box<StyleRefinement>>,
     path: SharedString,
     text_color: Option<Hsla>,
     size: Option<Size>,
-    rotation: Option<Radians>,
+    transformation: Option<Transformation>,
 }
 
-impl Default for Icon {
-    fn default() -> Self {
-        Self {
-            base: svg().flex_none().size_4(),
-            style: StyleRefinement::default(),
-            path: "".into(),
-            text_color: None,
-            size: None,
-            rotation: None,
-        }
-    }
-}
+// `Icon` is stored inline by roughly twenty types in this crate, several of
+// which hold a `Vec` of themselves. Growing it is not a local decision.
+const _: () = assert!(std::mem::size_of::<Icon>() <= 96);
 
 impl Clone for Icon {
     fn clone(&self) -> Self {
-        let mut this = Self::default().path(self.path.clone());
-        this.style = self.style.clone();
-        this.rotation = self.rotation;
-        this.size = self.size;
-        this.text_color = self.text_color;
-        this
+        Self {
+            style: self.style.clone(),
+            path: self.path.clone(),
+            text_color: self.text_color,
+            size: self.size,
+            transformation: self.transformation,
+        }
     }
 }
 
@@ -108,8 +105,8 @@ impl Icon {
         cx.new(|_| self)
     }
 
-    pub fn transform(mut self, transformation: gpui::Transformation) -> Self {
-        self.base = self.base.with_transformation(transformation);
+    pub fn transform(mut self, transformation: Transformation) -> Self {
+        self.transformation = Some(transformation);
         self
     }
 
@@ -118,17 +115,14 @@ impl Icon {
     }
 
     /// Rotate the icon by the given angle
-    pub fn rotate(mut self, radians: impl Into<Radians>) -> Self {
-        self.base = self
-            .base
-            .with_transformation(Transformation::rotate(radians));
-        self
+    pub fn rotate(self, radians: impl Into<Radians>) -> Self {
+        self.transform(Transformation::rotate(radians))
     }
 }
 
 impl Styled for Icon {
     fn style(&mut self) -> &mut StyleRefinement {
-        &mut self.style
+        self.style.get_or_insert_default()
     }
 
     fn text_color(mut self, color: impl Into<Hsla>) -> Self {
@@ -144,14 +138,14 @@ impl Sizable for Icon {
     }
 }
 
-impl RenderOnce for Icon {
-    fn render(self, window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let text_color = self.text_color.unwrap_or_else(|| window.text_style().color);
-        let text_size = window.text_style().font_size.to_pixels(window.rem_size());
-        let has_base_size = self.style.size.width.is_some() || self.style.size.height.is_some();
+impl Icon {
+    /// Build the `svg` element this icon describes.
+    fn build_svg(self, text_color: Hsla, text_size: gpui::Pixels) -> Svg {
+        let style = self.style.map(|style| *style).unwrap_or_default();
+        let has_base_size = style.size.width.is_some() || style.size.height.is_some();
 
-        let mut base = self.base;
-        *base.style() = self.style;
+        let mut base = svg();
+        *base.style() = style;
 
         base.flex_shrink_0()
             .text_color(text_color)
@@ -163,7 +157,19 @@ impl RenderOnce for Icon {
                 Size::Medium => this.size_4(),
                 Size::Large => this.size_6(),
             })
+            .when_some(self.transformation, |this, transformation| {
+                this.with_transformation(transformation)
+            })
             .path(self.path)
+    }
+}
+
+impl RenderOnce for Icon {
+    fn render(self, window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        let text_color = self.text_color.unwrap_or_else(|| window.text_style().color);
+        let text_size = window.text_style().font_size.to_pixels(window.rem_size());
+
+        self.build_svg(text_color, text_size)
     }
 }
 
@@ -177,24 +183,7 @@ impl Render for Icon {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let text_color = self.text_color.unwrap_or_else(|| cx.theme().foreground);
         let text_size = window.text_style().font_size.to_pixels(window.rem_size());
-        let has_base_size = self.style.size.width.is_some() || self.style.size.height.is_some();
 
-        let mut base = svg().flex_none();
-        *base.style() = self.style.clone();
-
-        base.flex_shrink_0()
-            .text_color(text_color)
-            .when(!has_base_size, |this| this.size(text_size))
-            .when_some(self.size, |this, size| match size {
-                Size::Size(px) => this.size(px),
-                Size::XSmall => this.size_3(),
-                Size::Small => this.size_3p5(),
-                Size::Medium => this.size_4(),
-                Size::Large => this.size_6(),
-            })
-            .path(self.path.clone())
-            .when_some(self.rotation, |this, rotation| {
-                this.with_transformation(Transformation::rotate(rotation))
-            })
+        self.clone().build_svg(text_color, text_size)
     }
 }
