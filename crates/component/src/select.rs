@@ -110,6 +110,7 @@ struct SelectOptions {
     disabled: bool,
     appearance: bool,
     focus_ring_enabled: bool,
+    fit_items: bool,
 }
 
 impl Default for SelectOptions {
@@ -129,6 +130,7 @@ impl Default for SelectOptions {
             focus_ring_enabled: true,
             search_placeholder: None,
             search_icon: None,
+            fit_items: false,
         }
     }
 }
@@ -148,6 +150,7 @@ where
     title_prefix: Option<SharedString>,
     focus_ring_enabled: bool,
     search_icon: Option<Icon>,
+    fit_items: bool,
 }
 
 /// A Select element.
@@ -287,6 +290,7 @@ where
             title_prefix: None,
             focus_ring_enabled: true,
             search_icon: None,
+            fit_items: false,
         }
     }
 
@@ -477,6 +481,52 @@ where
         cx.emit(SelectEvent::Confirm(None));
     }
 
+    /// Build the trigger element for a single item: its custom
+    /// [`SearchableListItem::display_title`] when it provides one, otherwise
+    /// its plain title with any `title_prefix` applied.
+    fn item_title(&self, item: &D::Item, window: &mut Window, cx: &mut App) -> AnyElement {
+        if let Some(el) = item.display_title(window, cx) {
+            el
+        } else if let Some(prefix) = self.title_prefix.as_ref() {
+            format!("{}{}", prefix, item.title()).into_any_element()
+        } else {
+            item.title().into_any_element()
+        }
+    }
+
+    /// Every item the delegate currently holds, cloned out so callers can pass
+    /// `&mut App` to the implementor without holding a borrow on the list.
+    fn all_items(&self, cx: &App) -> Vec<D::Item> {
+        let list = self.state.list.read(cx);
+        let delegate = &list.delegate().delegate;
+        let mut items = Vec::new();
+        for section in 0..delegate.sections_count(cx) {
+            for row in 0..delegate.items_count(section) {
+                if let Some(item) = delegate.item(IndexPath::default().section(section).row(row)) {
+                    items.push(item.clone());
+                }
+            }
+        }
+        items
+    }
+
+    /// Zero-height, clipped copies of every item's title, stacked in a column.
+    ///
+    /// A flex column's intrinsic width is the widest of its children, so these
+    /// pin the trigger to the width of its widest item while contributing no
+    /// height and painting nothing (`h_0` + `overflow_hidden` clips them out).
+    /// That gives native-`<select>` sizing without measuring any text or
+    /// assuming anything about the trigger's own padding, gaps, or icons.
+    /// See [`Select::fit_items`].
+    fn fit_sizer(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let items = self.all_items(cx);
+        let mut column = v_flex().h_0().overflow_hidden();
+        for item in &items {
+            column = column.child(self.item_title(item, window, cx));
+        }
+        column
+    }
+
     fn display_title(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let default_title = div().text_color(cx.theme().muted_foreground).child(
             self.state
@@ -503,13 +553,7 @@ where
             return default_title;
         };
 
-        let title = if let Some(el) = item.display_title(window, cx) {
-            el
-        } else if let Some(prefix) = self.title_prefix.as_ref() {
-            format!("{}{}", prefix, item.title()).into_any_element()
-        } else {
-            item.title().into_any_element()
-        };
+        let title = self.item_title(&item, window, cx);
 
         div()
             .when(self.state.disabled, |this| {
@@ -585,7 +629,15 @@ where
                                 .items_center()
                                 .justify_between()
                                 .gap_1()
-                                .child(
+                                .child({
+                                    // With `fit_items`, the hidden sizer goes
+                                    // in first so the slot (a column) is as
+                                    // wide as the widest item; the visible
+                                    // title sits under it and takes the whole
+                                    // height.
+                                    let sizer = self.fit_items.then(|| {
+                                        self.fit_sizer(window, cx).into_any_element()
+                                    });
                                     div()
                                         .id("title")
                                         .flex_1()
@@ -593,8 +645,10 @@ where
                                         .overflow_hidden()
                                         .whitespace_nowrap()
                                         .truncate()
-                                        .child(self.display_title(window, cx)),
-                                )
+                                        .when(sizer.is_some(), |this| this.flex().flex_col())
+                                        .children(sizer)
+                                        .child(self.display_title(window, cx))
+                                })
                                 .when(show_clean, |this| {
                                     this.child(clear_button(None, cx).map(|this| {
                                         if self.state.disabled {
@@ -670,6 +724,33 @@ where
             options: SelectOptions::default(),
             empty: None,
         }
+    }
+
+    /// Size the trigger to its widest item rather than to the current
+    /// selection, the way a native `<select>` sizes to its widest `<option>`.
+    /// Default: `false`.
+    ///
+    /// Without this, a `Select` given no explicit width sizes to whatever it
+    /// happens to be showing: the trigger resizes every time the selection
+    /// changes, and because an `Length::Auto` menu copies the trigger's width,
+    /// selecting a short item leaves the open menu too narrow for its own
+    /// longer rows. Passing an explicit `w()` avoids both, but only if the
+    /// caller hardcodes a width large enough for the longest item, which has
+    /// to be re-guessed whenever the font, font size, or item text changes.
+    ///
+    /// This measures nothing. It lays out a zero-height, clipped copy of every
+    /// item's title inside the trigger, so the trigger's intrinsic width is the
+    /// widest item's actual laid-out width, including whatever custom element
+    /// [`SearchableListItem::display_title`] returns. Combine with `min_w` /
+    /// `max_w` to bound it; an explicit `w()` still wins outright.
+    ///
+    /// Costs one extra layout pass per item per frame, so it suits small,
+    /// fixed option sets rather than long or searchable lists. It sizes to the
+    /// delegate's current items, so a filtered searchable list sizes to the
+    /// filtered set.
+    pub fn fit_items(mut self, fit: bool) -> Self {
+        self.options.fit_items = fit;
+        self
     }
 
     /// Set the width of the dropdown menu, default: `Length::Auto`.
@@ -848,6 +929,7 @@ where
             this.state.disabled = opts.disabled;
             this.state.appearance = opts.appearance;
             this.focus_ring_enabled = opts.focus_ring_enabled;
+            this.fit_items = opts.fit_items;
             this.icon = opts.icon;
             this.title_prefix = opts.title_prefix;
             this.search_icon = opts.search_icon;
