@@ -8,7 +8,6 @@ use gpui::{
 
 use crate::{Placement, Positioner, layer::TOOLTIP_PRIORITY};
 
-const TOOLTIP_PRIORITY: usize = 200;
 const WINDOW_MARGIN: Pixels = px(4.);
 const GRACE_PERIOD: Duration = Duration::from_millis(300);
 const SHOW_DELAY: Duration = Duration::from_millis(500);

@@ -54,6 +54,22 @@ pub use crate::searchable_list::SearchableListItemElement as SelectListItem;
 /// Re-exported for backward compatibility.
 pub use crate::searchable_list::SearchableVec;
 
+/// How much wider an `Length::Auto` dropdown is than its trigger.
+///
+/// The menu takes its width from the trigger, but a menu row is not laid out
+/// like the trigger's title. Both show the item's icon and label, and the
+/// row's trailing check icon and gap take roughly what the trigger's caret and
+/// gap do, so those cancel; what does not cancel is the list's own 4px padding
+/// on each side stacking with the row's 8px, against the trigger's 8px input
+/// padding. Without the difference a trigger fitted tightly to its label
+/// leaves the menu a few pixels short and clips the check icon off the
+/// selected row.
+///
+/// The difference works out at 8px, and this carries a few more on top on
+/// purpose: erring generous is safe, since a dropdown slightly wider than its
+/// trigger is unremarkable, while one a few pixels short visibly truncates.
+const MENU_OVERHANG: Pixels = px(12.);
+
 #[derive(IntoElement)]
 pub struct Caret {
     size: Size,
@@ -113,25 +129,6 @@ struct SelectOptions {
     fit_items: Option<bool>,
 }
 
-/// A trigger width computed from the widest item, and the inputs it was
-/// computed from. Recomputed when either changes: the item count covers
-/// items being added, removed, or filtered, and the rem size covers a
-/// theme font-size change rescaling every label. Replacing the delegate
-/// clears it outright, since a same-length swap changes neither key.
-///
-/// Caveat: the width is read from the laid-out trigger, so if the trigger is
-/// squeezed by a container too narrow for it on the frame the cache is taken,
-/// the shrunken width is what gets stored, and it stays until one of the keys
-/// changes. That matches what a hardcoded `w()` does in the same container,
-/// except for the stickiness. Give a select that shares a row with greedy
-/// siblings enough room, or set an explicit width.
-#[derive(Clone, Copy, PartialEq)]
-struct FitCache {
-    width: Pixels,
-    items: usize,
-    rem: Pixels,
-}
-
 impl Default for SelectOptions {
     fn default() -> Self {
         Self {
@@ -170,7 +167,6 @@ where
     focus_ring_enabled: bool,
     search_icon: Option<Icon>,
     fit_items: Option<bool>,
-    fit_cache: Option<FitCache>,
 }
 
 /// A Select element.
@@ -311,7 +307,6 @@ where
             focus_ring_enabled: true,
             search_icon: None,
             fit_items: None,
-            fit_cache: None,
         }
     }
 
@@ -379,9 +374,6 @@ where
         self.state.list.update(cx, |list, _| {
             list.delegate_mut().delegate = items;
         });
-        // The widest item may have changed, and a same-length replacement
-        // would not trip the item-count check on its own.
-        self.fit_cache = None;
     }
 
     /// Get the current selected index.
@@ -534,16 +526,6 @@ where
         self.fit_items.unwrap_or(!self.searchable)
     }
 
-    /// Total number of items across every section. Used as the cheap staleness
-    /// check for [`FitCache`], so it runs per render and must stay cheap.
-    fn items_len(&self, cx: &App) -> usize {
-        let list = self.state.list.read(cx);
-        let delegate = &list.delegate().delegate;
-        (0..delegate.sections_count(cx))
-            .map(|section| delegate.items_count(section))
-            .sum()
-    }
-
     /// Every item the delegate currently holds, cloned out so callers can pass
     /// `&mut App` to the implementor without holding a borrow on the list.
     fn all_items(&self, cx: &App) -> Vec<D::Item> {
@@ -568,10 +550,11 @@ where
     /// That gives native-`<select>` sizing without measuring any text or
     /// assuming anything about the trigger's own padding, gaps, or icons.
     ///
-    /// Rendered only on the frames where [`FitCache`] is stale. The resulting
-    /// width is captured in the trigger's prepaint and replayed as a `min_w`
-    /// on later frames, so the per-item layout cost is paid on item changes
-    /// rather than continuously. See [`Select::fit_items`].
+    /// Deliberately laid out on every frame rather than measured once and
+    /// replayed as a cached `min_w`: deriving the width in one frame and
+    /// applying it in the next makes the control visibly resize just after it
+    /// appears, which is far worse than the layout cost. That cost is why
+    /// searchable selects opt out by default. See [`Select::fit_items`].
     fn fit_sizer(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let items = self.all_items(cx);
         let mut column = v_flex().h_0().overflow_hidden();
@@ -632,17 +615,11 @@ where
 
         let (bg, fg) = input_style(self.state.disabled, cx);
 
-        // Size-to-widest-item bookkeeping. The sizer only renders while the
-        // cache is stale; once its width is captured in prepaint, later frames
-        // replay it as a `min_w` and skip the per-item layout entirely.
-        let should_fit = self.should_fit_items();
-        let fit_items_len = if should_fit { self.items_len(cx) } else { 0 };
-        let rem_size = window.rem_size();
-        let fit_cache = self
-            .fit_cache
-            .filter(|_| should_fit)
-            .filter(|c| c.items == fit_items_len && c.rem == rem_size);
-        let need_sizer = should_fit && fit_cache.is_none();
+        // Whether the trigger sizes itself to its widest item. The sizer that
+        // does it is laid out every frame on purpose: computing the width in
+        // one frame and replaying it in the next makes the control visibly
+        // change size after it first appears.
+        let need_sizer = self.should_fit_items();
 
         self.state.list.update(cx, |list, cx| {
             list.set_searchable(searchable, cx);
@@ -654,18 +631,7 @@ where
                 .relative()
                 .on_prepaint({
                     let state = cx.entity();
-                    move |bounds, _, cx| {
-                        state.update(cx, |r, _| {
-                            r.state.bounds = bounds;
-                            if need_sizer {
-                                r.fit_cache = Some(FitCache {
-                                    width: bounds.size.width,
-                                    items: fit_items_len,
-                                    rem: rem_size,
-                                });
-                            }
-                        })
-                    }
+                    move |bounds, _, cx| state.update(cx, |r, _| r.state.bounds = bounds)
                 })
                 .child(
                     div()
@@ -685,7 +651,6 @@ where
                         })
                         .input_size(self.state.size)
                         .input_text_size(self.state.size)
-                        .when_some(fit_cache, |this, cache| this.min_w(cache.width))
                         .refine_style(&self.state.style)
                         .when(outline_visible && self.state.appearance, |this| {
                             this.border_1().border_color(cx.theme().ring)
@@ -759,7 +724,9 @@ where
                             v_flex()
                                 .occlude()
                                 .map(|this| match self.state.menu_width {
-                                    Length::Auto => this.w(bounds.size.width + px(2.)),
+                                    Length::Auto => {
+                                        this.w(bounds.size.width + px(2.) + MENU_OVERHANG)
+                                    }
                                     Length::Definite(w) => this.w(w),
                                 })
                                 .popover_style(cx)
@@ -827,11 +794,9 @@ where
     /// [`SearchableListItem::display_title`] returns. Combine with `min_w` /
     /// `max_w` to bound it; an explicit `w()` still wins outright.
     ///
-    /// The sizing pass runs only when the item count or the rem size changes,
-    /// not every frame, so the steady-state cost is a single `min_w`. It sizes
-    /// to the delegate's *current* items, which is why searchable selects opt
-    /// out by default: their item set changes on every keystroke, so the
-    /// trigger would resize as the user types.
+    /// Costs one extra layout pass per item per frame, which is why searchable
+    /// selects opt out by default. They also size to the delegate's *current*
+    /// items, so fitting one would resize the trigger as the user types.
     pub fn fit_items(mut self, fit: bool) -> Self {
         self.options.fit_items = Some(fit);
         self
