@@ -728,7 +728,7 @@ where
 
     /// Size the trigger to its widest item rather than to the current
     /// selection, the way a native `<select>` sizes to its widest `<option>`.
-    /// Default: `false`.
+    /// Off by default.
     ///
     /// Without this, a `Select` given no explicit width sizes to whatever it
     /// happens to be showing: the trigger resizes every time the selection
@@ -744,12 +744,13 @@ where
     /// [`SearchableListItem::display_title`] returns. Combine with `min_w` /
     /// `max_w` to bound it; an explicit `w()` still wins outright.
     ///
-    /// Costs one extra layout pass per item per frame, so it suits small,
+    /// Costs one extra layout pass per item per frame, which is why it is
+    /// opt-in rather than the default for a width-less select: it suits small,
     /// fixed option sets rather than long or searchable lists. It sizes to the
     /// delegate's current items, so a filtered searchable list sizes to the
     /// filtered set.
-    pub fn fit_items(mut self, fit: bool) -> Self {
-        self.options.fit_items = fit;
+    pub fn fit_items(mut self) -> Self {
+        self.options.fit_items = true;
         self
     }
 
