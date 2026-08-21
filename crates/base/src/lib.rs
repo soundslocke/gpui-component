@@ -108,7 +108,7 @@ pub use global_state::{DeferredPopover, GlobalState};
 pub use history::History;
 pub use hover_card::{HoverCard, HoverCardState};
 pub use index_path::IndexPath;
-pub use input::{Editor, Input, InputBase, InputStyles, Textarea};
+pub use input::{Editor, INPUT_CONTEXT, Input, InputBase, InputStyles, Textarea};
 pub use layer::{DIALOG_PRIORITY, POPUP_PRIORITY, TOOLTIP_PRIORITY};
 pub use link::{Link, LinkStyles};
 pub use list_settings::ListSettings;

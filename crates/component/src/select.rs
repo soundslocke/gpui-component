@@ -28,13 +28,36 @@ use gpui_base::{GlobalState, Select as BaseSelect};
 // navigation runs unchanged.
 actions!(select, [SelectTab, SelectTabPrev]);
 
+/// Context predicate for the `space` binding: the select, minus any focused
+/// text input nested in it.
+const SPACE_CONFIRM_CONTEXT: &str = "Select && !TextInput";
+
+#[cfg(test)]
+mod space_binding_context_tests {
+    use super::SPACE_CONFIRM_CONTEXT;
+
+    #[test]
+    fn predicate_tracks_the_shared_context_names() {
+        assert_eq!(
+            SPACE_CONFIRM_CONTEXT,
+            format!(
+                "{} && !{}",
+                gpui_base::SELECT_CONTEXT,
+                gpui_base::INPUT_CONTEXT
+            )
+        );
+    }
+}
+
 pub(crate) fn init(cx: &mut App) {
     // The rest of the Select context bindings live in `gpui_base::select`.
     cx.bind_keys([
+        // Excluding a focused text input keeps space typable in the search
+        // box of a searchable Select.
         KeyBinding::new(
             "space",
             crate::actions::Confirm { secondary: false },
-            Some(gpui_base::SELECT_CONTEXT),
+            Some(SPACE_CONFIRM_CONTEXT),
         ),
         KeyBinding::new("tab", SelectTab, Some(gpui_base::SELECT_CONTEXT)),
         KeyBinding::new("shift-tab", SelectTabPrev, Some(gpui_base::SELECT_CONTEXT)),
@@ -678,9 +701,8 @@ where
                                     // wide as the widest item; the visible
                                     // title sits under it and takes the whole
                                     // height.
-                                    let sizer = need_sizer.then(|| {
-                                        self.fit_sizer(window, cx).into_any_element()
-                                    });
+                                    let sizer = need_sizer
+                                        .then(|| self.fit_sizer(window, cx).into_any_element());
                                     div()
                                         .id("title")
                                         .flex_1()
@@ -1018,13 +1040,54 @@ where
 
 #[cfg(test)]
 mod tests {
-    use gpui::{AppContext as _, TestAppContext};
+    use gpui::{
+        AppContext as _, Context, Entity, Focusable as _, IntoElement, Render, TestAppContext,
+        VisualTestContext, Window,
+    };
 
     use crate::{
         IndexPath,
         searchable_list::{SearchableListDelegate as _, SearchableVec},
         select::{Select, SelectGroup, SelectState},
     };
+
+    struct SearchHarness {
+        state: Entity<SelectState<SearchableVec<&'static str>>>,
+    }
+
+    impl Render for SearchHarness {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            Select::new(&self.state)
+        }
+    }
+
+    /// The search box lives inside the menu's `List` key context, which binds
+    /// `space` to Confirm. Typing has to win, or no multi-word query is
+    /// reachable.
+    #[gpui::test]
+    fn test_select_search_box_accepts_space(cx: &mut TestAppContext) {
+        cx.update(crate::init);
+        let (view, cx): (Entity<SearchHarness>, &mut VisualTestContext) =
+            cx.add_window_view(|window, cx| SearchHarness {
+                state: cx.new(|cx| {
+                    let items = SearchableVec::new(vec!["Two Handed Sword", "Bow"]);
+                    SelectState::new(items, None, window, cx).searchable(true)
+                }),
+            });
+        let state = view.read_with(cx, |view, _| view.state.clone());
+        cx.update(|window, cx| {
+            state.focus_handle(cx).focus(window, cx);
+            window.draw(cx).clear(cx);
+        });
+
+        cx.simulate_keystrokes("enter");
+        cx.simulate_keystrokes("t w o space h");
+
+        cx.update(|_, cx| {
+            let list = state.read(cx).state.list.clone();
+            assert_eq!(list.read(cx).query_input.read(cx).value(), "two h");
+        });
+    }
 
     #[gpui::test]
     fn an_explicit_accessibility_label_does_not_replace_the_placeholder(cx: &mut TestAppContext) {

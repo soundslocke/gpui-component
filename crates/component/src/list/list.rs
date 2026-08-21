@@ -23,12 +23,23 @@ use gpui::{
 };
 use rust_i18n::t;
 
+/// Context predicate for the `space` binding: the list, minus any focused
+/// text input nested in it.
+const SPACE_CONFIRM_CONTEXT: &str = "List && !TextInput";
+
 pub(crate) fn init(cx: &mut App) {
     let context: Option<&str> = Some("List");
     cx.bind_keys([
         KeyBinding::new("escape", Cancel, context),
         KeyBinding::new("enter", Confirm { secondary: false }, context),
-        KeyBinding::new("space", Confirm { secondary: false }, context),
+        // Space activates the highlighted row, but only when a text input
+        // isn't focused: a searchable list puts its query input inside this
+        // context, and typing a space there must stay a space.
+        KeyBinding::new(
+            "space",
+            Confirm { secondary: false },
+            Some(SPACE_CONFIRM_CONTEXT),
+        ),
         KeyBinding::new("secondary-enter", Confirm { secondary: true }, context),
         KeyBinding::new("up", SelectUp, context),
         KeyBinding::new("down", SelectDown, context),

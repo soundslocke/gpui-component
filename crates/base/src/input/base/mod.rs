@@ -119,6 +119,12 @@ impl InputContextMenuCapabilities {
     }
 }
 
+/// Key context every input frame carries.
+///
+/// Bindings that would otherwise steal a printable key from a focused text
+/// input negate it, e.g. `"List && !TextInput"` for the List `space` binding.
+pub const CONTEXT: &str = "TextInput";
+
 /// The foundational input frame.
 ///
 /// It intentionally owns only input semantics, interaction forwarding, and
@@ -228,6 +234,7 @@ impl RenderOnce for InputBase {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let style = self.resolved_style();
         self.base
+            .key_context(CONTEXT)
             .when_some(self.role.resolve(|| Role::TextInput), |this, role| {
                 this.role(role)
             })
