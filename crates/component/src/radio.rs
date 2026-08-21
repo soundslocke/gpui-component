@@ -8,7 +8,7 @@ use crate::{
 use gpui::{
     AnyElement, App, Axis, ElementId, FocusHandle, InteractiveElement, IntoElement, KeyDownEvent,
     ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, StyleRefinement, Styled,
-    Window, div, prelude::FluentBuilder, px, relative, rems,
+    Window, div, prelude::FluentBuilder, relative, rems,
 };
 use gpui_base::{Radio as BaseRadio, RadioGroup as BaseRadioGroup};
 

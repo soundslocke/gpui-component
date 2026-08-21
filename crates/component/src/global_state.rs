@@ -1,6 +1,6 @@
 use gpui::App;
 
-pub use gpui_base::GlobalState;
+pub use gpui_base::{DeferredPopover, GlobalState};
 
 pub(crate) fn init(cx: &mut App) {
     // Preserve the legacy initialization point while `gpui_base::init` remains

@@ -20,7 +20,7 @@ use crate::{
     ActiveTheme, ElementExt as _, IndexPath, Selectable, Sizable, Size, StyleSized, StyledExt,
     actions::{Cancel, SelectDown, SelectUp},
     dialog::Confirm,
-    global_state::GlobalState,
+    global_state::{DeferredPopover, GlobalState},
     h_flex,
     input::{Input, InputEvent, InputState},
     list::{List, ListDelegate, ListState},
@@ -178,6 +178,9 @@ pub struct SuggestInputState {
     pub(crate) hide_when_empty: bool,
     pub(crate) size: Size,
     bounds: Bounds<Pixels>,
+    /// Held while the popup is open, so a state collected without being closed
+    /// takes its registration with it.
+    deferred_context: Option<DeferredPopover>,
     _subs: Vec<Subscription>,
 }
 
@@ -321,18 +324,14 @@ impl SuggestInputState {
             hide_when_empty: false,
             size: Size::Small,
             bounds: Bounds::default(),
+            deferred_context: None,
             _subs: subs,
         }
     }
 
     fn set_open(&mut self, open: bool, cx: &mut Context<Self>) {
         self.open = open;
-        let fh = self.input.focus_handle(cx);
-        if self.open {
-            GlobalState::register_deferred_popover(&fh, cx);
-        } else {
-            GlobalState::unregister_deferred_popover(&fh, cx);
-        }
+        self.deferred_context = open.then(|| GlobalState::register_deferred_popover(cx));
         cx.notify();
     }
 
