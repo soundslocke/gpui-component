@@ -2,7 +2,7 @@ use crate::{
     ActiveTheme, ElementExt, Placement, StyledExt,
     dialog::{ANIMATION_DURATION, Dialog},
     focus_visible::FocusVisibleController,
-    input::{AnyInputState, Copy, InputState},
+    input::{AnyInputState, Copy},
     native_menu::FallbackMenuOverlay,
     notification::{Notification, NotificationList},
     sheet::Sheet,
@@ -631,6 +631,7 @@ impl Render for Root {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::input::InputState;
     use gpui::{Focusable as _, TestAppContext};
 
     struct TestView;
