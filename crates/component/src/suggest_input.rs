@@ -445,16 +445,32 @@ impl RenderOnce for SuggestInput {
                     });
                 }
             })
+            // Both handlers below consume their action only while the popup
+            // is open. A closed popup has nothing to cancel or confirm, and
+            // swallowing anyway would strand the enclosing Dialog: its close
+            // button and its OK button dispatch Cancel and Confirm along the
+            // focus path, so a focused suggest input would eat every click on
+            // them.
             .on_action({
                 let state = state_entity.clone();
                 move |_: &Cancel, _window: &mut Window, cx: &mut App| {
-                    state.update(cx, |s, cx| s.set_open(false, cx));
+                    if state.read(cx).open {
+                        state.update(cx, |s, cx| s.set_open(false, cx));
+                    } else {
+                        cx.propagate();
+                    }
                 }
             })
             // Prevent Enter from bubbling up to a parent Dialog's Confirm
-            // handler while the user is interacting with the suggest input
-            // (typing or picking from the popup).
-            .on_action(|_: &Confirm, _window, _cx| {})
+            // handler while the user is picking from the popup.
+            .on_action({
+                let state = state_entity.clone();
+                move |_: &Confirm, _window: &mut Window, cx: &mut App| {
+                    if !state.read(cx).open {
+                        cx.propagate();
+                    }
+                }
+            })
             .child(Input::new(&input).with_size(self.size))
             .when(show_popup, |this: gpui::Stateful<gpui::Div>| {
                 this.child(
@@ -570,45 +586,101 @@ impl RenderOnce for SuggestListItem {
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::Cell, rc::Rc};
+
     use gpui::{
-        AppContext as _, Context, Entity, Focusable as _, IntoElement, ParentElement as _, Render,
-        TestAppContext, VisualTestContext, Window, div,
+        AppContext as _, Context, Entity, Focusable as _, InteractiveElement as _, IntoElement,
+        ParentElement as _, Render, TestAppContext, VisualTestContext, Window, div,
     };
 
     use super::{SuggestInput, SuggestInputState};
+    use crate::{actions::Cancel, dialog::Confirm};
 
     struct Harness {
         state: Entity<SuggestInputState>,
+        /// Stands in for the enclosing Dialog, whose close and OK buttons
+        /// dispatch these actions along the focus path.
+        canceled: Rc<Cell<usize>>,
+        confirmed: Rc<Cell<usize>>,
     }
 
     impl Render for Harness {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-            div().child(SuggestInput::new(&self.state))
+            let canceled = self.canceled.clone();
+            let confirmed = self.confirmed.clone();
+            div()
+                .on_action(move |_: &Cancel, _, _| canceled.set(canceled.get() + 1))
+                .on_action(move |_: &Confirm, _, _| confirmed.set(confirmed.get() + 1))
+                .child(SuggestInput::new(&self.state))
         }
     }
 
-    fn harness(cx: &mut TestAppContext) -> (&mut VisualTestContext, Entity<SuggestInputState>) {
+    fn harness(cx: &mut TestAppContext) -> (&mut VisualTestContext, Entity<Harness>) {
         cx.update(crate::init);
         let (view, cx) = cx.add_window_view(|window, cx| Harness {
             state: cx.new(|cx| SuggestInputState::new(["Two Handed Sword"], window, cx)),
+            canceled: Rc::new(Cell::new(0)),
+            confirmed: Rc::new(Cell::new(0)),
         });
-        let state = view.read_with(cx, |view, _| view.state.clone());
         cx.update(|window, cx| {
-            state.focus_handle(cx).focus(window, cx);
+            view.read(cx).state.focus_handle(cx).focus(window, cx);
             window.draw(cx).clear(cx);
         });
-        (cx, state)
+        (cx, view)
     }
 
     /// The popup borrows the `List` key context for its Up/Down bindings, and
     /// that context also binds `space` to Confirm. Typing must win over the
     /// binding, or multi-word searches are impossible.
+    /// Typing normally opens the popup; drive it directly so a test doesn't
+    /// depend on the input's focus subscription having settled.
+    fn open_popup(cx: &mut VisualTestContext, state: &Entity<SuggestInputState>) {
+        cx.update(|window, cx| {
+            state.update(cx, |state, cx| state.set_open(true, cx));
+            window.draw(cx).clear(cx);
+        });
+    }
+
     #[gpui::test]
     fn space_types_into_the_input(cx: &mut TestAppContext) {
-        let (cx, state) = harness(cx);
+        let (cx, view) = harness(cx);
 
         cx.simulate_keystrokes("t w o space h");
 
-        cx.update(|_, cx| assert_eq!(state.read(cx).value(cx), "two h"));
+        cx.update(|_, cx| assert_eq!(view.read(cx).state.read(cx).value(cx), "two h"));
+    }
+
+    /// The popup owns Cancel only while it is showing. Otherwise a focused
+    /// suggest input would swallow the Dialog's close button, which reaches
+    /// the Dialog by dispatching Cancel along the focus path.
+    #[gpui::test]
+    fn cancel_closes_the_popup_first_and_then_reaches_the_dialog(cx: &mut TestAppContext) {
+        let (cx, view) = harness(cx);
+        let (state, canceled) =
+            view.read_with(cx, |view, _| (view.state.clone(), view.canceled.clone()));
+        open_popup(cx, &state);
+
+        cx.dispatch_action(Cancel);
+        cx.update(|_, cx| assert!(!state.read(cx).open));
+        assert_eq!(canceled.get(), 0, "the open popup keeps Cancel to itself");
+
+        cx.dispatch_action(Cancel);
+        assert_eq!(canceled.get(), 1);
+    }
+
+    /// Same for the Dialog's OK button, which dispatches Confirm.
+    #[gpui::test]
+    fn confirm_reaches_the_dialog_once_the_popup_is_closed(cx: &mut TestAppContext) {
+        let (cx, view) = harness(cx);
+        let (state, confirmed) =
+            view.read_with(cx, |view, _| (view.state.clone(), view.confirmed.clone()));
+        open_popup(cx, &state);
+
+        cx.dispatch_action(Confirm { secondary: false });
+        assert_eq!(confirmed.get(), 0, "the open popup keeps Confirm to itself");
+
+        cx.update(|_, cx| state.update(cx, |state, cx| state.set_open(false, cx)));
+        cx.dispatch_action(Confirm { secondary: false });
+        assert_eq!(confirmed.get(), 1);
     }
 }
