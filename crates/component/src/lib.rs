@@ -103,6 +103,7 @@ pub use gpui_base::{
     AxisExt, Edges, FocusTrapElement, InteractiveElementExt, LengthExt, Measure, OngoingScrollExt,
     Placement, Side, measure, measure_if,
 };
+pub use gpui_base::{DIALOG_PRIORITY, POPUP_PRIORITY, TOOLTIP_PRIORITY};
 pub use gpui_base::{
     ResizablePanel, ResizablePanelEvent, ResizablePanelGroup, ResizableState, h_resizable,
     resizable_panel, v_resizable,
