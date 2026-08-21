@@ -2,7 +2,7 @@ use crate::{
     ActiveTheme, ElementExt, Placement, StyledExt,
     dialog::{ANIMATION_DURATION, Dialog},
     focus_visible::FocusVisibleController,
-    input::{AnyInputState, Copy},
+    input::{AnyInputState, Copy, InputState},
     native_menu::FallbackMenuOverlay,
     notification::{Notification, NotificationList},
     sheet::Sheet,
