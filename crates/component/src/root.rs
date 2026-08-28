@@ -340,7 +340,7 @@ impl Root {
     fn restore_focus(handle: Option<FocusHandle>, window: &mut Window, cx: &mut App) {
         match handle {
             Some(handle) if handle.is_rendered(window) => window.focus(&handle, cx),
-            _ => window.blur(),
+            _ => window.blur(cx),
         }
     }
 
@@ -854,7 +854,7 @@ mod tests {
     fn closing_a_dialog_clears_focus_when_there_is_nothing_to_restore(cx: &mut TestAppContext) {
         let (_view, cx, _) = shortcut_harness(cx, false);
 
-        cx.update(|window, _| window.blur());
+        cx.update(|window, cx| window.blur(cx));
         cx.update(|window, cx| window.draw(cx).clear(cx));
 
         open_and_escape_a_dialog(cx);
@@ -868,7 +868,7 @@ mod tests {
     fn a_view_can_reclaim_focus_after_a_dialog_closes(cx: &mut TestAppContext) {
         let (_view, cx, fired) = shortcut_harness(cx, true);
 
-        cx.update(|window, _| window.blur());
+        cx.update(|window, cx| window.blur(cx));
         cx.update(|window, cx| window.draw(cx).clear(cx));
 
         open_and_escape_a_dialog(cx);
