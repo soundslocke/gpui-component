@@ -48,11 +48,11 @@ gpui-wry = { path = "crates/webview", version = "0.6.0" }
 gpui-component-shell = { path = "crates/component-shell", version = "0.6.0" }
 story = { path = "crates/story" }
 
-gpui = { git = "https://github.com/soundslocke/zed", rev = "77f81a35e18191ff83ce4ca6d06f0711484a7b1a", features = ["profiler"] }
-gpui_platform = { git = "https://github.com/soundslocke/zed", rev = "77f81a35e18191ff83ce4ca6d06f0711484a7b1a", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
-gpui_web = { git = "https://github.com/soundslocke/zed", rev = "77f81a35e18191ff83ce4ca6d06f0711484a7b1a" }
-gpui_macros = { git = "https://github.com/soundslocke/zed", rev = "77f81a35e18191ff83ce4ca6d06f0711484a7b1a" }
-reqwest_client = { git = "https://github.com/soundslocke/zed", rev = "77f81a35e18191ff83ce4ca6d06f0711484a7b1a" }
+gpui = { git = "https://github.com/soundslocke/zed", rev = "2c53895593173e95195b64676cb704c14b654019", features = ["profiler"] }
+gpui_platform = { git = "https://github.com/soundslocke/zed", rev = "2c53895593173e95195b64676cb704c14b654019", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
+gpui_web = { git = "https://github.com/soundslocke/zed", rev = "2c53895593173e95195b64676cb704c14b654019" }
+gpui_macros = { git = "https://github.com/soundslocke/zed", rev = "2c53895593173e95195b64676cb704c14b654019" }
+reqwest_client = { git = "https://github.com/soundslocke/zed", rev = "2c53895593173e95195b64676cb704c14b654019" }
 sum-tree = { package = "gpui-pre-sum-tree", version = "0.3.1" }
 reqwest = { package = "gpui-pre-reqwest", version = "0.12.15", default-features = false, features = [
     "charset",
