@@ -9,8 +9,7 @@ use crate::{
 };
 pub use gpui_base::slider::{SliderEvent, SliderScale, SliderState, SliderValue};
 use gpui_base::{
-    Slider as BaseSlider, SliderIndicator, SliderThumb, SliderTrack, Spring, slider::THUMB_SIZE,
-    spring,
+    Slider as BaseSlider, SliderIndicator, SliderThumb, SliderTrack, slider::THUMB_SIZE, spring,
 };
 
 use gpui::{
